@@ -772,3 +772,18 @@ exit 1 retains any reference disagreement, including in the no-write controls.
 The optional native test covers both matrices and does not require known
 lifecycle differences to persist. Offline tests verify original ROM hashes,
 speed witnesses, completion/guard checks and bounded scenario selection.
+
+`scripts/cgb_pulse_retrigger_probe.py` isolates retrigger timing without STOP or
+frequency writes after the measured operation. Use `--runner`,
+`--sameboy-capture` and a fresh `--output` directory; optional
+`--case ch1-retrigger-gap-1` selects one scenario at both CPU speeds. The 48-case
+matrix covers both pulse channels, active retriggers and equal-cost no-retrigger
+controls, at gaps of 0/1/2/3/8/32 NOPs. Each case independently sweeps 64 PCM read
+delays, checking NR52, KEY1, completion and a WRAM guard. Initial double speed
+is selected before APU measurement begins. Reports retain complete curves,
+ROM/executable hashes, repeated observations and differing indices, with
+`qualification=false` and the same 0/1/2 success/disagreement/error convention.
+`gameboy_cgb_pulse_retrigger_probe_contract` runs offline; set
+`GBB_TEST_RUNNER` and `GBB_SAMEBOY_CGB_CAPTURE` for the complete native matrix
+in `tests/cgb_pulse_retrigger_probe_tests.py`. The lifecycle native contract now
+requires parity for all retrigger-only cases while retaining STOP differences.

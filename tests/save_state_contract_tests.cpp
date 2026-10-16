@@ -845,6 +845,42 @@ void test_saved_pulse_frequency_window() {
     }
 }
 
+void test_saved_active_pulse_retrigger() {
+    auto rom = banked_rom(2, 0, 0, 0);
+    rom[0x143] = 0x80;
+    for (const unsigned offset : {0U, 5U}) {
+        for (const unsigned warm : {10U, 12U, 26U, 74U}) {
+            gameboy::Emulator emulator{gameboy::Cartridge{rom}, gameboy::HardwareModel::cgb_e};
+            auto& bus = emulator.bus();
+            bus.set_audio_enabled(false);
+            bus.write8(0xFF26, 0);
+            bus.write8(0xFF26, 0x80);
+            bus.write8(0xFF11 + offset, 0);
+            bus.write8(0xFF12 + offset, 0xF0);
+            bus.write8(0xFF13 + offset, 0xFC);
+            bus.write8(0xFF14 + offset, 0x87);
+            bus.tick(warm);
+            const auto state = emulator.save_state();
+            const auto record = [&]() {
+                bus.write8(0xFF14 + offset, 0x87);
+                std::vector<std::uint8_t> pcm;
+                for (unsigned i = 0; i < 160; ++i) {
+                    bus.tick(1);
+                    pcm.push_back(bus.read8(0xFF76));
+                }
+                return pcm;
+            };
+            const auto expected = record();
+            bus.tick(3);
+            emulator.load_state(state);
+            check(emulator.save_state() == state,
+                  "save states retain the active pulse and NR52 clock phase");
+            check(record() == expected,
+                  "restoring before an active retrigger preserves subsequent PCM edges");
+        }
+    }
+}
+
 } // namespace
 
 int main() {
@@ -852,6 +888,7 @@ int main() {
         test_save_state_round_trip_and_validation();
         test_saved_pulse_enable_phase();
         test_saved_pulse_frequency_window();
+        test_saved_active_pulse_retrigger();
     } catch (const std::exception& error) {
         std::cerr << "Unexpected exception: " << error.what() << '\n';
         return 1;

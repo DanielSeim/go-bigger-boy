@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Align CGB-E active pulse retriggers to the NR52-relative 1-MHz clock while
+  retaining duty phase and AGB timing. All 48 isolated retrigger/control cases
+  now match SameBoy; lifecycle matches rise from 6 to 16, leaving only the
+  32 speed-switch cases unresolved. SameSuite's 84 statuses are unchanged.
+
 - Add opt-in pulse frequency controls for active retriggers and CPU speed
   switches, including equal-cost no-write observations and KEY1 witnesses.
   Record 48 repeatable reference comparisons and retain the 42 differences

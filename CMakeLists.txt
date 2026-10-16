@@ -819,6 +819,9 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_cgb_pulse_frequency_probe_contract
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_pulse_frequency_probe_tests.py)
+        add_test(NAME gameboy_cgb_pulse_retrigger_probe_contract
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_pulse_retrigger_probe_tests.py)
         add_test(NAME gameboy_samesuite_frequency_reference_contract
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/samesuite_frequency_reference_tests.py)

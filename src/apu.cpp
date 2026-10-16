@@ -10,12 +10,12 @@
 namespace gameboy {
 namespace {
 constexpr std::size_t maximum_buffered_samples = Apu::sample_rate * 2;
-// CGB-E's power-cycle startup path has separate delays for an inactive channel
-// and an active retrigger. The inactive path waits four 2-MHz ticks longer;
-// the distinction is observable through the PCM12 channel-delay and restart
-// tests.
+// NR52-relative CGB-E pulse startup waits two 1-MHz ticks when inactive,
+// and one on an active retrigger. AGB retains its established one-APU-clock
+// active delay; its frequency-write/retrigger behavior is a separate path.
 constexpr unsigned inactive_channel_trigger_delay = 8;
 constexpr unsigned active_channel_trigger_delay = 1;
+constexpr unsigned cgb_e_active_channel_trigger_delay = 4;
 // The generic/DMG path retains the established five-clock startup timing;
 // the longer/shorter split is only for the explicit CGB-E profile below.
 constexpr unsigned channel_trigger_delay = 5;
@@ -42,7 +42,7 @@ void Apu::initialize_power_on(const HardwareModel model) noexcept {
     cgb_hardware_ = is_cgb_hardware(model);
     modern_cgb_ = model == HardwareModel::cgb || model == HardwareModel::cgb_e || is_agb_hardware(model);
     cgb_e_revision_ = model == HardwareModel::cgb_e || is_agb_hardware(model);
-    cgb_e_frequency_latch_ = model == HardwareModel::cgb_e;
+    cgb_e_clock_latch_ = model == HardwareModel::cgb_e;
     cgb_e_power_cycle_startup_ = false;
     power_off();
 }
@@ -313,7 +313,7 @@ void Apu::tick(const unsigned cycles) noexcept {
         // below still execute literally once per native cycle.
         for (auto* pulse : {&pulse1_, &pulse2_}) if (pulse->enabled) {
             pulse->timer -= cycles;
-            if (!cgb_e_frequency_latch_ || !cgb_e_power_cycle_startup_ || crossed_power_clock)
+            if (!cgb_e_clock_latch_ || !cgb_e_power_cycle_startup_ || crossed_power_clock)
                 pulse->just_reloaded = false;
         }
         if (wave_.enabled) {
@@ -493,11 +493,12 @@ void Apu::trigger_pulse1() noexcept {
                         : ((pulse1_.timer & 3U) | (period & ~3U));
     pulse1_.just_reloaded = false;
     const auto cgb_e_startup = cgb_e_revision_ && cgb_e_power_cycle_startup_;
+    const auto active_delay = cgb_e_clock_latch_ ? cgb_e_active_channel_trigger_delay
+                                                : active_channel_trigger_delay;
     pulse1_.timer += cgb_e_startup
-                        ? (was_enabled ? active_channel_trigger_delay
-                                       : inactive_channel_trigger_delay)
+                        ? (was_enabled ? active_delay : inactive_channel_trigger_delay)
                         : channel_trigger_delay;
-    if (cgb_e_startup && !was_enabled) {
+    if (cgb_e_startup && (!was_enabled || cgb_e_clock_latch_)) {
         pulse1_.timer += (4U - power_clock_phase_) & 3U;
     } else if (modern_cgb_ && !was_enabled) {
         const auto alignment = period >= 16
@@ -546,11 +547,12 @@ void Apu::trigger_pulse2() noexcept {
                         : ((pulse2_.timer & 3U) | (period & ~3U));
     pulse2_.just_reloaded = false;
     const auto cgb_e_startup = cgb_e_revision_ && cgb_e_power_cycle_startup_;
+    const auto active_delay = cgb_e_clock_latch_ ? cgb_e_active_channel_trigger_delay
+                                                : active_channel_trigger_delay;
     pulse2_.timer += cgb_e_startup
-                        ? (was_enabled ? active_channel_trigger_delay
-                                       : inactive_channel_trigger_delay)
+                        ? (was_enabled ? active_delay : inactive_channel_trigger_delay)
                         : channel_trigger_delay;
-    if (cgb_e_startup && !was_enabled) {
+    if (cgb_e_startup && (!was_enabled || cgb_e_clock_latch_)) {
         pulse2_.timer += (4U - power_clock_phase_) & 3U;
     } else if (modern_cgb_ && !was_enabled) {
         const auto alignment = period >= 16
@@ -726,7 +728,7 @@ void Apu::clock_envelope(EnvelopeState& envelope,
 void Apu::update_pulse_frequency(PulseState& pulse, const unsigned register_offset,
                                   const bool high_register) noexcept {
     if (!pulse.just_reloaded) return;
-    const auto extended_window = cgb_e_frequency_latch_ && cgb_e_power_cycle_startup_;
+    const auto extended_window = cgb_e_clock_latch_ && cgb_e_power_cycle_startup_;
     // NRx3 retains the single-clock reload collision. CGB-E NRx4 latches
     // throughout the current 1-MHz interval; AGB uses the established path.
     if (extended_window && !high_register && power_clock_phase_ != 0) return;
@@ -739,7 +741,7 @@ void Apu::update_pulse_frequency(PulseState& pulse, const unsigned register_offs
 void Apu::tick_pulse(PulseState& pulse,
                      const unsigned register_offset) noexcept {
     if (!pulse.enabled) return;
-    if (!cgb_e_frequency_latch_ || !cgb_e_power_cycle_startup_ || power_clock_phase_ == 0)
+    if (!cgb_e_clock_latch_ || !cgb_e_power_cycle_startup_ || power_clock_phase_ == 0)
         pulse.just_reloaded = false;
     if (pulse.timer == 1 && pulse.duty_update_pending) {
         pulse.duty = pulse.pending_duty;

@@ -1,0 +1,729 @@
+{
+  "schema": "gbb-pulse-retrigger-evidence-v1",
+  "qualification": false,
+  "date": "2026-10-16",
+  "base_commit": "55ee8e9",
+  "model": "cgb-e",
+  "sameboy_commit": "208ba4afabffab9edde416f2dbb8ae459e34adb8",
+  "boot_sha256": "c8937124cd7dcafc036dcad3ad46008ea57b4e76abfa3da6012ff8bdbd7687d0",
+  "adapter_sha256": "7537e97ee26ca54385499cb93212b22201f0e0eb5c7d8e7b0526c875072eb241",
+  "runner_sha256": {
+    "before": "1c7af3aa49ccf23ab73fd2bfdefd38cf2d9be3da3823cc83c62cbd756061ab4b",
+    "paired_after": "3cde23901a1ec8482cf296250395111f54ba26e8cbc71a6315be39afb3e8f57a",
+    "final_native": "4ac2912d18bbc201b280714c735e54780f572b82d7cb6ed3e4326897b86e9eba",
+    "conformance": "9f11f8de57b7e2df1b5bf6fc0933550654ec0710b88c8baa9bb53fcb064ec1cb"
+  },
+  "source_sha256": {
+    "src/apu.cpp": "67a1cc2fb67629fa4a6a359615df2d857f83276ad5aa82fb184eb56c90cee4d7",
+    "include/gameboy/apu.hpp": "4d88bcf5f3d360f42040f31736840f2a6b89d16626984ed8cad167d5e7cac91f",
+    "scripts/cgb_pulse_retrigger_probe.py": "44f4b1dc537b53732fd10a47dc7078b4f7019f67387b55ffe5d17074b8100628"
+  },
+  "isolated": {
+    "cases": 48,
+    "samples_per_case": 64,
+    "takes_per_core": 2,
+    "executions_per_build": 192,
+    "before_matching": 36,
+    "after_matching": 48,
+    "all_repeatable": true,
+    "all_record_checks_pass": true,
+    "rows": [
+      {
+        "scenario": "ch1-retrigger-gap-0",
+        "double_speed": false,
+        "rom_sha256": "8fa517ac42edbf0f667447f60aac63b013fa299742e367bd5bd702a6752d02c2",
+        "before_sha256": "0ede3f659996efe90adaab2e426b75b2100758f56d407e11ac3bdf0e310a4221",
+        "after_sha256": "0ede3f659996efe90adaab2e426b75b2100758f56d407e11ac3bdf0e310a4221",
+        "sameboy_sha256": "0ede3f659996efe90adaab2e426b75b2100758f56d407e11ac3bdf0e310a4221",
+        "before_first_nonzero": 26,
+        "after_first_nonzero": 26,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-retrigger-gap-1",
+        "double_speed": false,
+        "rom_sha256": "2d9c04a790570e979975f19f9400901dba6d7c9b330e657dd6f2839fd80483d0",
+        "before_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "after_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "sameboy_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "before_first_nonzero": 22,
+        "after_first_nonzero": 22,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-retrigger-gap-2",
+        "double_speed": false,
+        "rom_sha256": "32d3d67c8495ea780129bd54daf7f9b6ca0edc1d46cdf0bef55e6e36b36b3b1f",
+        "before_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "after_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "sameboy_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "before_first_nonzero": 22,
+        "after_first_nonzero": 22,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-retrigger-gap-3",
+        "double_speed": false,
+        "rom_sha256": "475e3111d3249e41d1555bd22431cbdea82c58a0bc0fe112c9eb018061e83ccd",
+        "before_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "after_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "sameboy_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "before_first_nonzero": 22,
+        "after_first_nonzero": 22,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-retrigger-gap-8",
+        "double_speed": false,
+        "rom_sha256": "c348ad9371a6be3279d1f4f2b629a5dae7fa78e53bc7b4f4a65df5da7ecf8af4",
+        "before_sha256": "a9d35e1e2ca886b81ab56bff8fc050481b45af277bec88a4ad771b197ae056f1",
+        "after_sha256": "a9d35e1e2ca886b81ab56bff8fc050481b45af277bec88a4ad771b197ae056f1",
+        "sameboy_sha256": "a9d35e1e2ca886b81ab56bff8fc050481b45af277bec88a4ad771b197ae056f1",
+        "before_first_nonzero": 18,
+        "after_first_nonzero": 18,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-retrigger-gap-32",
+        "double_speed": false,
+        "rom_sha256": "6afcce76877b73a0b65665dc4ae3c0dfb00fe8a758ad46a741a21afebc4594cf",
+        "before_sha256": "0ede3f659996efe90adaab2e426b75b2100758f56d407e11ac3bdf0e310a4221",
+        "after_sha256": "0ede3f659996efe90adaab2e426b75b2100758f56d407e11ac3bdf0e310a4221",
+        "sameboy_sha256": "0ede3f659996efe90adaab2e426b75b2100758f56d407e11ac3bdf0e310a4221",
+        "before_first_nonzero": 26,
+        "after_first_nonzero": 26,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-observe-gap-0",
+        "double_speed": false,
+        "rom_sha256": "6b6f6b9357ef5b9b9b85b8ce1b8c302c38ed0481f9c748dd8c371c7ca1c4e7c1",
+        "before_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "after_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "sameboy_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "before_first_nonzero": 22,
+        "after_first_nonzero": 22,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-observe-gap-1",
+        "double_speed": false,
+        "rom_sha256": "6e9db87aac4efdc9d5041b6bd49c89c26e209aff7c756656d52231f3937d461a",
+        "before_sha256": "777fc85e3a191b7185f33b1d8694ce9a8b29b5d6de2398eb85cc2d1feef6c9bc",
+        "after_sha256": "777fc85e3a191b7185f33b1d8694ce9a8b29b5d6de2398eb85cc2d1feef6c9bc",
+        "sameboy_sha256": "777fc85e3a191b7185f33b1d8694ce9a8b29b5d6de2398eb85cc2d1feef6c9bc",
+        "before_first_nonzero": 21,
+        "after_first_nonzero": 21,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-observe-gap-2",
+        "double_speed": false,
+        "rom_sha256": "ad9221a19bbbefd9b1d946ac81555b8cfeff0b191a4d79a53d675d4a9eede495",
+        "before_sha256": "27b0521095648448fc9d979674de555cbac6fea1ab74498351f201cf335e6831",
+        "after_sha256": "27b0521095648448fc9d979674de555cbac6fea1ab74498351f201cf335e6831",
+        "sameboy_sha256": "27b0521095648448fc9d979674de555cbac6fea1ab74498351f201cf335e6831",
+        "before_first_nonzero": 20,
+        "after_first_nonzero": 20,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-observe-gap-3",
+        "double_speed": false,
+        "rom_sha256": "43ad91cd44ea47a6a1d2c08f4a7626e058b1e5eee7358b7dbcdc7f1eeb430ec2",
+        "before_sha256": "7aa532bc369aff49f914138d195871508b0962b4ab534e1aede524a5e0cd1125",
+        "after_sha256": "7aa532bc369aff49f914138d195871508b0962b4ab534e1aede524a5e0cd1125",
+        "sameboy_sha256": "7aa532bc369aff49f914138d195871508b0962b4ab534e1aede524a5e0cd1125",
+        "before_first_nonzero": 19,
+        "after_first_nonzero": 19,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-observe-gap-8",
+        "double_speed": false,
+        "rom_sha256": "176200aeceab48118ace4c3c8cb996348bc777d472eba1dc5c60cce0868a205a",
+        "before_sha256": "d72ccc9af6ff6b9610466363f4cb05951fd1f30d41834808966518d5643a8eab",
+        "after_sha256": "d72ccc9af6ff6b9610466363f4cb05951fd1f30d41834808966518d5643a8eab",
+        "sameboy_sha256": "d72ccc9af6ff6b9610466363f4cb05951fd1f30d41834808966518d5643a8eab",
+        "before_first_nonzero": 14,
+        "after_first_nonzero": 14,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-observe-gap-32",
+        "double_speed": false,
+        "rom_sha256": "3b989b7ab02fb82d4c2429e1f3888423971bdc7416d210fa7eaa1fe3203a32a5",
+        "before_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "after_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "sameboy_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "before_first_nonzero": 22,
+        "after_first_nonzero": 22,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-retrigger-gap-0",
+        "double_speed": false,
+        "rom_sha256": "8c61e279b283cc2d784a3904fac51b57a1cfcec7c252ba292d515b55c60198b7",
+        "before_sha256": "0ede3f659996efe90adaab2e426b75b2100758f56d407e11ac3bdf0e310a4221",
+        "after_sha256": "0ede3f659996efe90adaab2e426b75b2100758f56d407e11ac3bdf0e310a4221",
+        "sameboy_sha256": "0ede3f659996efe90adaab2e426b75b2100758f56d407e11ac3bdf0e310a4221",
+        "before_first_nonzero": 26,
+        "after_first_nonzero": 26,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-retrigger-gap-1",
+        "double_speed": false,
+        "rom_sha256": "da5d77002f2255e67e2ca4d970d125a5964a2b54abcb3830ec74eb0c8b0d8548",
+        "before_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "after_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "sameboy_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "before_first_nonzero": 22,
+        "after_first_nonzero": 22,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-retrigger-gap-2",
+        "double_speed": false,
+        "rom_sha256": "f2708f7ac9af26e23999328ee25ce0de89a536a3df1ad6d7129e6ad3ee3ddc6f",
+        "before_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "after_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "sameboy_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "before_first_nonzero": 22,
+        "after_first_nonzero": 22,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-retrigger-gap-3",
+        "double_speed": false,
+        "rom_sha256": "1a978dc99d8be65e0192dbbc4c3c80942db635c791fb5a739f5adc9409ee59b3",
+        "before_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "after_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "sameboy_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "before_first_nonzero": 22,
+        "after_first_nonzero": 22,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-retrigger-gap-8",
+        "double_speed": false,
+        "rom_sha256": "a2243d4b4cdf1f8f8a47adf118920079303c46940427b3ccd1a01b355533344b",
+        "before_sha256": "a9d35e1e2ca886b81ab56bff8fc050481b45af277bec88a4ad771b197ae056f1",
+        "after_sha256": "a9d35e1e2ca886b81ab56bff8fc050481b45af277bec88a4ad771b197ae056f1",
+        "sameboy_sha256": "a9d35e1e2ca886b81ab56bff8fc050481b45af277bec88a4ad771b197ae056f1",
+        "before_first_nonzero": 18,
+        "after_first_nonzero": 18,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-retrigger-gap-32",
+        "double_speed": false,
+        "rom_sha256": "a0cb197375f89bf8a9e630f3660a66ba71499b7ce9e2b2710365df764d2ac098",
+        "before_sha256": "0ede3f659996efe90adaab2e426b75b2100758f56d407e11ac3bdf0e310a4221",
+        "after_sha256": "0ede3f659996efe90adaab2e426b75b2100758f56d407e11ac3bdf0e310a4221",
+        "sameboy_sha256": "0ede3f659996efe90adaab2e426b75b2100758f56d407e11ac3bdf0e310a4221",
+        "before_first_nonzero": 26,
+        "after_first_nonzero": 26,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-observe-gap-0",
+        "double_speed": false,
+        "rom_sha256": "1b392801214d2885350bd9fc9a02dfcae6e33e03c2148217c80ea9d8d322e791",
+        "before_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "after_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "sameboy_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "before_first_nonzero": 22,
+        "after_first_nonzero": 22,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-observe-gap-1",
+        "double_speed": false,
+        "rom_sha256": "febc7c5a8fa409703b0e721ea284d3b041bc584e403e8ae4200c29622e9d0b4e",
+        "before_sha256": "777fc85e3a191b7185f33b1d8694ce9a8b29b5d6de2398eb85cc2d1feef6c9bc",
+        "after_sha256": "777fc85e3a191b7185f33b1d8694ce9a8b29b5d6de2398eb85cc2d1feef6c9bc",
+        "sameboy_sha256": "777fc85e3a191b7185f33b1d8694ce9a8b29b5d6de2398eb85cc2d1feef6c9bc",
+        "before_first_nonzero": 21,
+        "after_first_nonzero": 21,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-observe-gap-2",
+        "double_speed": false,
+        "rom_sha256": "ce683f5a9a847a3363cf2e1bbe4e20a1db0baf084599f6106bfbf92430f4ca16",
+        "before_sha256": "27b0521095648448fc9d979674de555cbac6fea1ab74498351f201cf335e6831",
+        "after_sha256": "27b0521095648448fc9d979674de555cbac6fea1ab74498351f201cf335e6831",
+        "sameboy_sha256": "27b0521095648448fc9d979674de555cbac6fea1ab74498351f201cf335e6831",
+        "before_first_nonzero": 20,
+        "after_first_nonzero": 20,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-observe-gap-3",
+        "double_speed": false,
+        "rom_sha256": "d5278bc508c790259dc196c3b8fd888dda93199b34fed0edf4791e0aebd95155",
+        "before_sha256": "7aa532bc369aff49f914138d195871508b0962b4ab534e1aede524a5e0cd1125",
+        "after_sha256": "7aa532bc369aff49f914138d195871508b0962b4ab534e1aede524a5e0cd1125",
+        "sameboy_sha256": "7aa532bc369aff49f914138d195871508b0962b4ab534e1aede524a5e0cd1125",
+        "before_first_nonzero": 19,
+        "after_first_nonzero": 19,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-observe-gap-8",
+        "double_speed": false,
+        "rom_sha256": "edb186babdc90d10bbcf3bf29e698ea1baca0c73e6abe17f61181a69e869ab22",
+        "before_sha256": "d72ccc9af6ff6b9610466363f4cb05951fd1f30d41834808966518d5643a8eab",
+        "after_sha256": "d72ccc9af6ff6b9610466363f4cb05951fd1f30d41834808966518d5643a8eab",
+        "sameboy_sha256": "d72ccc9af6ff6b9610466363f4cb05951fd1f30d41834808966518d5643a8eab",
+        "before_first_nonzero": 14,
+        "after_first_nonzero": 14,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-observe-gap-32",
+        "double_speed": false,
+        "rom_sha256": "238f0aa584ec8fa692dea36602dca4d1c317d24ef53d6bf2cca9e9579155983d",
+        "before_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "after_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "sameboy_sha256": "402570cfa1bf779e6f3d53b9ee7267eb8df5fe8174c1b2d8f07483c42087ebe7",
+        "before_first_nonzero": 22,
+        "after_first_nonzero": 22,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-retrigger-gap-0",
+        "double_speed": true,
+        "rom_sha256": "5ec380a7fff74565e61b80da596e063b373aacbbe72d2d4568b1618c5626327b",
+        "before_sha256": "9aa61b479065b8de0e93f1a0c01d52836eb09300bb3e1fe5dff16f19223c904d",
+        "after_sha256": "581bb069b2e42af25c119de3ce052f7ede35f9baf6c0f9678c59e754ac19734c",
+        "sameboy_sha256": "581bb069b2e42af25c119de3ce052f7ede35f9baf6c0f9678c59e754ac19734c",
+        "before_first_nonzero": 54,
+        "after_first_nonzero": 56,
+        "before_differences": [
+          54,
+          55,
+          62,
+          63
+        ],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-retrigger-gap-1",
+        "double_speed": true,
+        "rom_sha256": "a22182fba223244a6d82b640b7bc938039d1c473ab845de10962de2bcc624a89",
+        "before_sha256": "9aa61b479065b8de0e93f1a0c01d52836eb09300bb3e1fe5dff16f19223c904d",
+        "after_sha256": "0207441eea749ed6c5e3d571bb1e266ed4d7ebfec2e64d7234f1e83022f6630c",
+        "sameboy_sha256": "0207441eea749ed6c5e3d571bb1e266ed4d7ebfec2e64d7234f1e83022f6630c",
+        "before_first_nonzero": 54,
+        "after_first_nonzero": 55,
+        "before_differences": [
+          54,
+          62
+        ],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-retrigger-gap-2",
+        "double_speed": true,
+        "rom_sha256": "c4e961cb2f830516bcb09fb3e4adf2fb647213a4578913c2d02d40e4855a9164",
+        "before_sha256": "9aa61b479065b8de0e93f1a0c01d52836eb09300bb3e1fe5dff16f19223c904d",
+        "after_sha256": "581bb069b2e42af25c119de3ce052f7ede35f9baf6c0f9678c59e754ac19734c",
+        "sameboy_sha256": "581bb069b2e42af25c119de3ce052f7ede35f9baf6c0f9678c59e754ac19734c",
+        "before_first_nonzero": 54,
+        "after_first_nonzero": 56,
+        "before_differences": [
+          54,
+          55,
+          62,
+          63
+        ],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-retrigger-gap-3",
+        "double_speed": true,
+        "rom_sha256": "1f14b7eee96d38cc5ba232507d7f2abedc2b0d6bf579e81937c0e52a3b3d2a55",
+        "before_sha256": "9aa61b479065b8de0e93f1a0c01d52836eb09300bb3e1fe5dff16f19223c904d",
+        "after_sha256": "0207441eea749ed6c5e3d571bb1e266ed4d7ebfec2e64d7234f1e83022f6630c",
+        "sameboy_sha256": "0207441eea749ed6c5e3d571bb1e266ed4d7ebfec2e64d7234f1e83022f6630c",
+        "before_first_nonzero": 54,
+        "after_first_nonzero": 55,
+        "before_differences": [
+          54,
+          62
+        ],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-retrigger-gap-8",
+        "double_speed": true,
+        "rom_sha256": "6e1dab69dc245de28b0a8aa1839eea2dd7051b8b4eae6448c68a238d9d60beb4",
+        "before_sha256": "20197cce6a1c3c299c3460515187d3f1ec6aa4a8f0d614c37fc6f93b511a084c",
+        "after_sha256": "1f72f4e8fc29c7cd5d1909a1b44828a399901b36134a6150b5a58d872eef9fd8",
+        "sameboy_sha256": "1f72f4e8fc29c7cd5d1909a1b44828a399901b36134a6150b5a58d872eef9fd8",
+        "before_first_nonzero": 46,
+        "after_first_nonzero": 48,
+        "before_differences": [
+          46,
+          47,
+          54,
+          55
+        ],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-retrigger-gap-32",
+        "double_speed": true,
+        "rom_sha256": "1cd2b3be8a3b6b5b9afed331e2e0ac2fae063f8c7201ff43ceeea46f2cd6f373",
+        "before_sha256": "b30325759878d89efd8331bdbf894662b8cd58bd24914360a2d3b76cd40a885f",
+        "after_sha256": "e607116077e5db53118d362b2fd4f4c7eadbc90196cd99fd7bf3ddae1fad636a",
+        "sameboy_sha256": "e607116077e5db53118d362b2fd4f4c7eadbc90196cd99fd7bf3ddae1fad636a",
+        "before_first_nonzero": 22,
+        "after_first_nonzero": 24,
+        "before_differences": [
+          22,
+          23,
+          30,
+          31
+        ],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-observe-gap-0",
+        "double_speed": true,
+        "rom_sha256": "d61e66ac0c7cd4224fd2e79f8d2edb31d2b4e0d7bd0e179d34371aaf2947a904",
+        "before_sha256": "7dd81392a8dbb8397e53ff5f627cbaf57c00998462fca413a5723958c0218928",
+        "after_sha256": "7dd81392a8dbb8397e53ff5f627cbaf57c00998462fca413a5723958c0218928",
+        "sameboy_sha256": "7dd81392a8dbb8397e53ff5f627cbaf57c00998462fca413a5723958c0218928",
+        "before_first_nonzero": 52,
+        "after_first_nonzero": 52,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-observe-gap-1",
+        "double_speed": true,
+        "rom_sha256": "afc8cad52ee32259fe2e5ca0a0f2b6de21f273fc9a3187432d0a333b7bd911d1",
+        "before_sha256": "1a1fb91cd66aefa036ac06a3c331ef857798b87ae06424cb9cf63900f61f336f",
+        "after_sha256": "1a1fb91cd66aefa036ac06a3c331ef857798b87ae06424cb9cf63900f61f336f",
+        "sameboy_sha256": "1a1fb91cd66aefa036ac06a3c331ef857798b87ae06424cb9cf63900f61f336f",
+        "before_first_nonzero": 51,
+        "after_first_nonzero": 51,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-observe-gap-2",
+        "double_speed": true,
+        "rom_sha256": "872bb1058fca146a270281acfeb48fb95d897664e68a65b9ffa75814a0de81bd",
+        "before_sha256": "1f492c7677dfa4bdb16f520b9cb51da58c3a9c8ec6619176ddf2aff273e817a7",
+        "after_sha256": "1f492c7677dfa4bdb16f520b9cb51da58c3a9c8ec6619176ddf2aff273e817a7",
+        "sameboy_sha256": "1f492c7677dfa4bdb16f520b9cb51da58c3a9c8ec6619176ddf2aff273e817a7",
+        "before_first_nonzero": 50,
+        "after_first_nonzero": 50,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-observe-gap-3",
+        "double_speed": true,
+        "rom_sha256": "8f321e2f9c963df05b7c4cbeccda7552716c76033ebce2961ac1b77023880791",
+        "before_sha256": "b67f4d0745152d03d95058ba81334003c1dd7e6888f03f6fe335b5f040530a9c",
+        "after_sha256": "b67f4d0745152d03d95058ba81334003c1dd7e6888f03f6fe335b5f040530a9c",
+        "sameboy_sha256": "b67f4d0745152d03d95058ba81334003c1dd7e6888f03f6fe335b5f040530a9c",
+        "before_first_nonzero": 49,
+        "after_first_nonzero": 49,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-observe-gap-8",
+        "double_speed": true,
+        "rom_sha256": "62275bfb097a72f6edc5e04d3360b9f91c0c8c710791ee968b67ce4eb28006d7",
+        "before_sha256": "4edf0b154647d2656a33a21a484f55ff9ac1507b77d5f73a37f7f838bdb79cea",
+        "after_sha256": "4edf0b154647d2656a33a21a484f55ff9ac1507b77d5f73a37f7f838bdb79cea",
+        "sameboy_sha256": "4edf0b154647d2656a33a21a484f55ff9ac1507b77d5f73a37f7f838bdb79cea",
+        "before_first_nonzero": 44,
+        "after_first_nonzero": 44,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-observe-gap-32",
+        "double_speed": true,
+        "rom_sha256": "e08c2e57024b74341b4f6b24f6aadd0e2b98ed4cf867c89161bee1ebd19a195f",
+        "before_sha256": "a8083db408a7452f47a67d279ae56b08a0dc2644515d0c5c0bc32e610e9b8e02",
+        "after_sha256": "a8083db408a7452f47a67d279ae56b08a0dc2644515d0c5c0bc32e610e9b8e02",
+        "sameboy_sha256": "a8083db408a7452f47a67d279ae56b08a0dc2644515d0c5c0bc32e610e9b8e02",
+        "before_first_nonzero": 20,
+        "after_first_nonzero": 20,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-retrigger-gap-0",
+        "double_speed": true,
+        "rom_sha256": "7b0f28cd3527a87bd1bb5d62d97e7c922025d7fb606c924367695e01c6e04fe6",
+        "before_sha256": "9aa61b479065b8de0e93f1a0c01d52836eb09300bb3e1fe5dff16f19223c904d",
+        "after_sha256": "581bb069b2e42af25c119de3ce052f7ede35f9baf6c0f9678c59e754ac19734c",
+        "sameboy_sha256": "581bb069b2e42af25c119de3ce052f7ede35f9baf6c0f9678c59e754ac19734c",
+        "before_first_nonzero": 54,
+        "after_first_nonzero": 56,
+        "before_differences": [
+          54,
+          55,
+          62,
+          63
+        ],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-retrigger-gap-1",
+        "double_speed": true,
+        "rom_sha256": "79d9187ea0a44998495e81861e6cf949a59ca560509175efa79c321a047f7b5e",
+        "before_sha256": "9aa61b479065b8de0e93f1a0c01d52836eb09300bb3e1fe5dff16f19223c904d",
+        "after_sha256": "0207441eea749ed6c5e3d571bb1e266ed4d7ebfec2e64d7234f1e83022f6630c",
+        "sameboy_sha256": "0207441eea749ed6c5e3d571bb1e266ed4d7ebfec2e64d7234f1e83022f6630c",
+        "before_first_nonzero": 54,
+        "after_first_nonzero": 55,
+        "before_differences": [
+          54,
+          62
+        ],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-retrigger-gap-2",
+        "double_speed": true,
+        "rom_sha256": "8001dc14a0a6a84c51a9906f5264ba7562e187a777edd206dfd9051b69a7d1b0",
+        "before_sha256": "9aa61b479065b8de0e93f1a0c01d52836eb09300bb3e1fe5dff16f19223c904d",
+        "after_sha256": "581bb069b2e42af25c119de3ce052f7ede35f9baf6c0f9678c59e754ac19734c",
+        "sameboy_sha256": "581bb069b2e42af25c119de3ce052f7ede35f9baf6c0f9678c59e754ac19734c",
+        "before_first_nonzero": 54,
+        "after_first_nonzero": 56,
+        "before_differences": [
+          54,
+          55,
+          62,
+          63
+        ],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-retrigger-gap-3",
+        "double_speed": true,
+        "rom_sha256": "56c748a1c4d53cc389e6f4c989b6c1fd2f591489b59dbcca5cf4753d284ac3ba",
+        "before_sha256": "9aa61b479065b8de0e93f1a0c01d52836eb09300bb3e1fe5dff16f19223c904d",
+        "after_sha256": "0207441eea749ed6c5e3d571bb1e266ed4d7ebfec2e64d7234f1e83022f6630c",
+        "sameboy_sha256": "0207441eea749ed6c5e3d571bb1e266ed4d7ebfec2e64d7234f1e83022f6630c",
+        "before_first_nonzero": 54,
+        "after_first_nonzero": 55,
+        "before_differences": [
+          54,
+          62
+        ],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-retrigger-gap-8",
+        "double_speed": true,
+        "rom_sha256": "4acda5771c0050d21ccf849147e107dc3d9e573f1e7ccdac3856a7aaada68da0",
+        "before_sha256": "20197cce6a1c3c299c3460515187d3f1ec6aa4a8f0d614c37fc6f93b511a084c",
+        "after_sha256": "1f72f4e8fc29c7cd5d1909a1b44828a399901b36134a6150b5a58d872eef9fd8",
+        "sameboy_sha256": "1f72f4e8fc29c7cd5d1909a1b44828a399901b36134a6150b5a58d872eef9fd8",
+        "before_first_nonzero": 46,
+        "after_first_nonzero": 48,
+        "before_differences": [
+          46,
+          47,
+          54,
+          55
+        ],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-retrigger-gap-32",
+        "double_speed": true,
+        "rom_sha256": "3fc1da604675b20fcdc401d4e470435a5acf7f4bd4200272b00b4aeaf59f50f1",
+        "before_sha256": "b30325759878d89efd8331bdbf894662b8cd58bd24914360a2d3b76cd40a885f",
+        "after_sha256": "e607116077e5db53118d362b2fd4f4c7eadbc90196cd99fd7bf3ddae1fad636a",
+        "sameboy_sha256": "e607116077e5db53118d362b2fd4f4c7eadbc90196cd99fd7bf3ddae1fad636a",
+        "before_first_nonzero": 22,
+        "after_first_nonzero": 24,
+        "before_differences": [
+          22,
+          23,
+          30,
+          31
+        ],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-observe-gap-0",
+        "double_speed": true,
+        "rom_sha256": "380d088bf13ac59a9e4aaf3f2c480edd5566f0094e2163c9604e4ec53f2fefe5",
+        "before_sha256": "7dd81392a8dbb8397e53ff5f627cbaf57c00998462fca413a5723958c0218928",
+        "after_sha256": "7dd81392a8dbb8397e53ff5f627cbaf57c00998462fca413a5723958c0218928",
+        "sameboy_sha256": "7dd81392a8dbb8397e53ff5f627cbaf57c00998462fca413a5723958c0218928",
+        "before_first_nonzero": 52,
+        "after_first_nonzero": 52,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-observe-gap-1",
+        "double_speed": true,
+        "rom_sha256": "ba5ba2db558c7d25c8b6be5f89215d63e202b4900e70cd1370f5257d760cc2a2",
+        "before_sha256": "1a1fb91cd66aefa036ac06a3c331ef857798b87ae06424cb9cf63900f61f336f",
+        "after_sha256": "1a1fb91cd66aefa036ac06a3c331ef857798b87ae06424cb9cf63900f61f336f",
+        "sameboy_sha256": "1a1fb91cd66aefa036ac06a3c331ef857798b87ae06424cb9cf63900f61f336f",
+        "before_first_nonzero": 51,
+        "after_first_nonzero": 51,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-observe-gap-2",
+        "double_speed": true,
+        "rom_sha256": "c43b9404a195a986673f7d809e9c2b4a3dec9f9f2f51a7278c5e90d17cec0ae8",
+        "before_sha256": "1f492c7677dfa4bdb16f520b9cb51da58c3a9c8ec6619176ddf2aff273e817a7",
+        "after_sha256": "1f492c7677dfa4bdb16f520b9cb51da58c3a9c8ec6619176ddf2aff273e817a7",
+        "sameboy_sha256": "1f492c7677dfa4bdb16f520b9cb51da58c3a9c8ec6619176ddf2aff273e817a7",
+        "before_first_nonzero": 50,
+        "after_first_nonzero": 50,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-observe-gap-3",
+        "double_speed": true,
+        "rom_sha256": "523f87c895335935fe98cb7527e64a4ef668178c0901c6e352641377cb4c1da8",
+        "before_sha256": "b67f4d0745152d03d95058ba81334003c1dd7e6888f03f6fe335b5f040530a9c",
+        "after_sha256": "b67f4d0745152d03d95058ba81334003c1dd7e6888f03f6fe335b5f040530a9c",
+        "sameboy_sha256": "b67f4d0745152d03d95058ba81334003c1dd7e6888f03f6fe335b5f040530a9c",
+        "before_first_nonzero": 49,
+        "after_first_nonzero": 49,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-observe-gap-8",
+        "double_speed": true,
+        "rom_sha256": "d937d1097ccf66aefec45c517ab02eeb4b2efbabfb29a052023b5ac9cb72934e",
+        "before_sha256": "4edf0b154647d2656a33a21a484f55ff9ac1507b77d5f73a37f7f838bdb79cea",
+        "after_sha256": "4edf0b154647d2656a33a21a484f55ff9ac1507b77d5f73a37f7f838bdb79cea",
+        "sameboy_sha256": "4edf0b154647d2656a33a21a484f55ff9ac1507b77d5f73a37f7f838bdb79cea",
+        "before_first_nonzero": 44,
+        "after_first_nonzero": 44,
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-observe-gap-32",
+        "double_speed": true,
+        "rom_sha256": "79b1c8552763bba81ee59da0ce925d08aaba548fc2ecf22a09903256e2f5d190",
+        "before_sha256": "a8083db408a7452f47a67d279ae56b08a0dc2644515d0c5c0bc32e610e9b8e02",
+        "after_sha256": "a8083db408a7452f47a67d279ae56b08a0dc2644515d0c5c0bc32e610e9b8e02",
+        "sameboy_sha256": "a8083db408a7452f47a67d279ae56b08a0dc2644515d0c5c0bc32e610e9b8e02",
+        "before_first_nonzero": 20,
+        "after_first_nonzero": 20,
+        "before_differences": [],
+        "after_differences": []
+      }
+    ]
+  },
+  "lifecycle": {
+    "cases": 48,
+    "before_matching": 6,
+    "after_matching": 16,
+    "pass_to_failure": 0,
+    "improved": [
+      {
+        "scenario": "ch1-high-retrigger",
+        "double_speed": false
+      },
+      {
+        "scenario": "ch2-high-retrigger",
+        "double_speed": false
+      },
+      {
+        "scenario": "ch1-high-retrigger",
+        "double_speed": true
+      },
+      {
+        "scenario": "ch1-low-retrigger",
+        "double_speed": true
+      },
+      {
+        "scenario": "ch1-control-retrigger",
+        "double_speed": true
+      },
+      {
+        "scenario": "ch1-observe-retrigger",
+        "double_speed": true
+      },
+      {
+        "scenario": "ch2-high-retrigger",
+        "double_speed": true
+      },
+      {
+        "scenario": "ch2-low-retrigger",
+        "double_speed": true
+      },
+      {
+        "scenario": "ch2-control-retrigger",
+        "double_speed": true
+      },
+      {
+        "scenario": "ch2-observe-retrigger",
+        "double_speed": true
+      }
+    ],
+    "remaining_differing": 32,
+    "remaining_all_include_speed_switch": true
+  },
+  "samesuite": {
+    "cases": 84,
+    "identical_statuses": 84,
+    "passed": 56,
+    "failed": 20,
+    "unsupported": 6,
+    "info": 2
+  },
+  "conformance": {
+    "passed": 168,
+    "failed": 0
+  },
+  "limits": [
+    "Reference comparisons, not physical hardware qualification.",
+    "Isolated probe uses period 16 and 12.5 percent duty; broader suites retain other scenario coverage.",
+    "Speed-switch cases remain unresolved and are not treated as successful comparisons.",
+    "Source was uncommitted when measured; source hashes identify the correction."
+  ]
+}

@@ -386,6 +386,40 @@ void test_cgb_e_frequency_write_window() {
     }
 }
 
+void test_cgb_e_active_retrigger_clock() {
+    for (const auto model : {gameboy::HardwareModel::cgb_e, gameboy::HardwareModel::agb}) {
+        for (const unsigned offset : {0U, 5U}) {
+            for (const unsigned warm : {10U, 12U, 14U, 16U, 26U, 74U}) {
+                for (const bool batched : {false, true}) {
+                    gameboy::MemoryBus bus{gameboy::Cartridge{cgb_test_rom()}};
+                    bus.initialize_post_boot(model);
+                    bus.set_audio_enabled(false);
+                    bus.write8(0xFF26, 0);
+                    bus.write8(0xFF26, 0x80);
+                    bus.write8(0xFF11 + offset, 0);
+                    bus.write8(0xFF12 + offset, 0xF0);
+                    bus.write8(0xFF13 + offset, 0xFC);
+                    bus.write8(0xFF14 + offset, 0x87);
+                    if (batched) bus.tick(warm);
+                    else for (unsigned i = 0; i < warm; ++i) bus.tick(1);
+                    bus.write8(0xFF14 + offset, 0x87);
+                    const auto duty_step = warm < 24 ? 0U : 1 + (warm - 24) / 16;
+                    const auto delay = model == gameboy::HardwareModel::cgb_e
+                                           ? 4 + ((4 - (warm & 3)) & 3) : 1;
+                    const auto expected = 16 + delay + (6 - duty_step) * 16;
+                    unsigned first_high = 0;
+                    for (unsigned cycle = 1; cycle <= 160; ++cycle) {
+                        bus.tick(1);
+                        if (!first_high && bus.read8(0xFF76)) first_high = cycle;
+                    }
+                    check(first_high == expected,
+                          "active retrigger retains duty phase and CGB-E/AGB clock distinction");
+                }
+            }
+        }
+    }
+}
+
 void test_cgb_revision_boundary_fixtures() {
     const auto first_pulse2_high_cycle = [](const gameboy::HardwareModel model) {
         gameboy::MemoryBus bus{gameboy::Cartridge{cgb_test_rom()}};
@@ -535,6 +569,7 @@ int main() {
     test_cgb_revision_boundary_fixtures();
     test_cgb_e_power_relative_pulse_phase();
     test_cgb_e_frequency_write_window();
+    test_cgb_e_active_retrigger_clock();
     test_apu_pulse2_samples_and_length();
     test_apu_high_pass_filter();
     return failures == 0 ? 0 : 1;

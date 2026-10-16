@@ -562,8 +562,9 @@ normalization. This independently confirmed the enable-relative clock phase.
 CGB-E/AGB inactive pulse triggers now round the initial countdown to the
 1-MHz clock established by NR52 enable, replacing the fixed inactive-channel
 phase adjustment on that path. The clock advances even with channels disabled
-or presentation audio muted; active retriggers and other revision paths retain
-their existing behavior. All 64 authored cases now match, as do the complete
+or presentation audio muted. Active retrigger alignment is covered by the
+follow-up correction below; other revision paths retain their existing
+behavior. All 64 authored cases now match, as do the complete
 48-byte curves and explicit pass protocols of the four pinned SameSuite tests.
 The full SameSuite report improves from 36 pass / 40 fail to 55 pass / 21 fail;
 six unsupported revisions and two informational entries remain unchanged.
@@ -651,9 +652,45 @@ separate isolation before further corrections. No core timing is changed by
 this matrix, no hardware baseline is qualified, and mismatches still return
 exit 1. Per-case hashes, differing indices and first differing observations
 are recorded in `tests/fixtures/external-reference/cgb-pulse-frequency-lifecycle.json`.
-Next isolate the double-speed active-retrigger clock using the no-write path,
-then separate STOP-transition clocking before extending frequency-write fixes
-or moving on to envelope glitches.
+The subsequent `scripts/cgb_pulse_retrigger_probe.py` isolates active restart
+timing with equal-cost no-retrigger controls and no frequency writes or STOP
+after the measured operation. It covers both channels and CPU speeds, varying
+the initial trigger-to-operation gap over 0/1/2/3/8/32 NOPs. Each of 48 cases
+samples 64 independent read delays, with constant frequency 2044, duty 12.5%
+and volume 15. PCM reads finish 12 + 4*n CPU T-cycles after the second trigger
+or equal-cost control; NR52 and KEY1 are recorded separately. Short gaps vary
+the trigger's clock phase, while longer gaps also check retained duty position.
+
+Before correction 36/48 isolated cases matched: all normal-speed cases and
+all no-retrigger controls. All 12 double-speed active-retrigger cases differed.
+For either channel, first nonzero sample indices were:
+
+| Gap in NOPs | GBB before | SameBoy / GBB after |
+| --- | --- | --- |
+| 0 | 54 | 56 |
+| 1 | 54 | 55 |
+| 2 | 54 | 56 |
+| 3 | 54 | 55 |
+| 8 | 46 | 48 |
+| 32 | 22 | 24 |
+
+CGB-E active retriggers now use one 1-MHz startup tick followed by alignment
+to the NR52-relative clock, retaining duty position. The inactive path still
+uses two ticks. AGB retains its previous active delay and frequency-write path;
+other revision paths are unchanged. All 48 isolated curves now match and repeat.
+The lifecycle matrix improves from 6/48 to 16/48 matches with no previously
+matching case lost: every retrigger-only case now matches, and all 32 remaining
+differences involve a speed switch. This does not resolve STOP-transition
+clocking or qualify physical hardware behavior.
+
+The full SameSuite run retains all 84 statuses: 56 pass, 20 fail, six unsupported
+and two informational. All 168 conformance tests still pass. Direct contracts
+check both channels, CGB-E/AGB, muted output and single-cycle/batched warm-up;
+save/load restores before a retrigger with varied clock and duty phases without
+a format change. Before/after hashes, sample differences and case counts are
+recorded in `tests/fixtures/external-reference/cgb-pulse-retrigger.json`.
+Next isolate STOP-transition clocking with active and disabled APU controls
+before extending frequency-write fixes or moving on to envelope glitches.
 
 DIV/APU edges are dispatched at their timer-cycle boundary rather than being
 queued until the end of a bus batch. The APU also models the hardware rule that
@@ -665,8 +702,8 @@ one-tick counter receives its extra clock and is reloaded by a simultaneous
 trigger. This matches SameSuite's DMG `div_write_trigger_10` case; the ordinary
 two-tick high-start case remains covered separately. The CGB-E/AGB inactive
 square-channel path uses the NR52-relative alignment described above, including
-the long-period `channel_[12]_volume_div` cases; other modern-CGB profiles and
-active restarts retain their established startup timing.
+the long-period `channel_[12]_volume_div` cases. CGB-E active restarts use the
+clock alignment described above; other profiles retain their established timing.
 
 Square duty writes now use a latched duty value: writes made while a channel is
 active take effect at the next waveform boundary, while writes made while it is

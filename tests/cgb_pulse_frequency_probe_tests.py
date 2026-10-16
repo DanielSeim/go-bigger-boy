@@ -170,6 +170,8 @@ class NativeProbeContracts(unittest.TestCase):
                 a, b = (row['captures'][name]['events'] for name in ('gbb', 'sameboy'))
                 self.assertEqual(row['match'], a == b)
                 self.assertEqual(row['different_event_indices'], [i for i in range(64) if a[i] != b[i]])
+                if probe.lifecycle_mode(row['scenario']) == 'retrigger':
+                    self.assertTrue(row['match'])
                 for capture in row['captures'].values():
                     self.assertTrue(capture['repeatable'])
                     self.assertTrue(capture['authored_constraints_match'])

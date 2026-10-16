@@ -164,7 +164,7 @@ private:
     bool cgb_hardware_{};
     bool modern_cgb_{};
     bool cgb_e_revision_{};
-    bool cgb_e_frequency_latch_{};
+    bool cgb_e_clock_latch_{};
     bool cgb_e_power_cycle_startup_{};
     std::uint8_t power_clock_phase_{};
     bool powered_{};
