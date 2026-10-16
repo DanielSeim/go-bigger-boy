@@ -487,6 +487,66 @@ CGB-A/B/D tags are visible as skipped direct tests or unsupported report rows. T
 revision-specific failures are resolved; it is not included in the release
 gate by default.
 
+The opt-in `scripts/samesuite_alignment_reference.py` narrows the CH1/CH2
+alignment failures using four individually hashed ROMs from pinned bundle v7.0
+and SameBoy 1.0.3 (`208ba4afabffab9edde416f2dbb8ae459e34adb8`). It runs the
+unmodified tests on CGB-E with the same owned CGB boot image in both cores.
+Each test switches to double CPU speed. Both explicit result protocols and
+complete 48-byte WRAM curves are collected twice; a separate frame-16 capture
+must follow the protocol completion clock. GBB's frozen completion-register
+signature is also checked. CPU T-cycles and SameBoy's 8-MHz clocks remain in
+separate fields and are compared only within their own emulator.
+
+```sh
+python3 scripts/samesuite_alignment_reference.py \
+  --rom-root /external/game-boy-test-roms-v7.0/same-suite \
+  --runner ./build/gbb_test_runner \
+  --sameboy-capture /external/sameboy-cgb-capture \
+  --output /external/samesuite-alignment-results
+```
+
+Build the reference adapter as documented in
+[the GBVisualizer reference guide](gbvisualizer-reference.md); the pin descriptor
+is `tests/fixtures/external-reference/samesuite-alignment.json`. ROM hashes are
+checked before execution, outputs require a fresh directory, and no external
+source/ROM/assets are bundled. Reports retain commands, binary/boot/ROM hashes,
+protocol clocks, repeated curves and differing sample indices. The reference
+executable must be built against the pinned SameBoy Core revision; its binary
+hash is recorded, while the script does not infer a library revision from that
+hash.
+
+On 2026-10-16 all four tests passed in SameBoy and failed in GBB, with repeatable
+protocols and curves. Each curve has three 16-sample groups, using 0/1/3 NOPs to
+vary either channel-trigger placement (`align`) or NR52 enable placement
+(`align_cpu`). Within a group, the delay before the PCM read ranges from 0 to
+15 NOPs. CH1 amplitude is 08 and CH2 amplitude is 80 in PCM12. The first nonzero
+sample positions, numbered from zero, were:
+
+| Test group variable | GBB, both channels | SameBoy, both channels |
+| --- | --- | --- |
+| Channel-trigger phase | 11 / 11 / 11 | 13 / 12 / 12 |
+| NR52 enable phase | 11 / 11 / 11 | 13 / 13 / 13 |
+
+CH1 and CH2 agree exactly after normalizing the high nibble. For trigger-phase
+tests the differing indices are 11, 12, 27 and 43; for enable-phase tests they
+are 11, 12, 27, 28, 43 and 44. The variable shift points to the APU-enable-relative
+clock phase as a useful next hypothesis; a uniform trigger-delay adjustment
+would not express all these observations. These are register-amplitude timing
+measurements, separate from analog waveforms and from the SGB SPC700 driver.
+
+The full comparison deliberately returns **1** with `qualification=false` until
+both conformance protocols pass and both curves match. Contract tests cover pins,
+PCM fields, complete pass/fail signatures, fail-closed reports and hash rejection
+before execution. Optional native tests require `GBB_TEST_RUNNER`,
+`GBB_SAMEBOY_CGB_CAPTURE` and `GBB_SAMESUITE_ROM_DIR`; they check repeated frozen
+curves and cross-channel symmetry without requiring GBB's current failure to
+persist. CTest registers `gameboy_samesuite_alignment_reference_contract`.
+
+Next add an independently authored NR52-enable/trigger-phase control at normal
+and double CPU speed, then use the evidence to correct CGB-E pulse clock
+alignment while retaining revision-specific and existing waveform contracts.
+No APU timing was changed by the comparison harness.
+
 DIV/APU edges are dispatched at their timer-cycle boundary rather than being
 queued until the end of a bus batch. The APU also models the hardware rule that
 enabling it while the DIV/APU input is high skips the first falling-edge event;

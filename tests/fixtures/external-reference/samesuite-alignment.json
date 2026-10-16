@@ -1,0 +1,34 @@
+{
+  "project": "SameSuite",
+  "repository": "https://github.com/LIJI32/SameSuite",
+  "bundle": "https://github.com/c-sp/game-boy-test-roms/releases/download/v7.0/game-boy-test-roms-v7.0.zip",
+  "bundle_sha256": "b9a9d7a1075aa35a3d07c07c34974048672d8520dca9e07a50178f5860c3832c",
+  "sameboy_commit": "208ba4afabffab9edde416f2dbb8ae459e34adb8",
+  "distribution": "external-only",
+  "tests": {
+    "channel_1_align": {
+      "path": "apu/channel_1/channel_1_align.gb",
+      "sha256": "1ca49fcd1113e49872c784a54d367e2fb892867d6bce05e77fc192e1956e41eb",
+      "channel": 1,
+      "group_variable": "channel_trigger_phase"
+    },
+    "channel_1_align_cpu": {
+      "path": "apu/channel_1/channel_1_align_cpu.gb",
+      "sha256": "2bcb12b10e3634589a680827f832c58b25c96d08ab027a53e4365e0214bfd199",
+      "channel": 1,
+      "group_variable": "nr52_enable_phase"
+    },
+    "channel_2_align": {
+      "path": "apu/channel_2/channel_2_align.gb",
+      "sha256": "ba59787e41d57378d9ec64ab6348e933775e4c212c48a9222e37052d1da61c26",
+      "channel": 2,
+      "group_variable": "channel_trigger_phase"
+    },
+    "channel_2_align_cpu": {
+      "path": "apu/channel_2/channel_2_align_cpu.gb",
+      "sha256": "f4305776a87faf2b7c7a14a21594faa9dafc5d4bca110751787c0580f100b942",
+      "channel": 2,
+      "group_variable": "nr52_enable_phase"
+    }
+  }
+}

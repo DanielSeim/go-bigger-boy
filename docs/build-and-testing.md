@@ -712,3 +712,11 @@ suffixes, unsupported non-execution, and the CMake resolver CLI. A small authore
 CMake fixture compares actual direct registrations with report discovery,
 including paths with spaces, multi-profile names and explicit skip properties.
 It requires no upstream ROM, compiler, build or network access.
+
+The opt-in [SameSuite alignment comparison](accuracy.md) records four pinned
+CH1/CH2 tests against SameBoy, with full repeated PCM curves and explicit result
+protocols. `gameboy_samesuite_alignment_reference_contract` runs offline. Set
+`GBB_TEST_RUNNER`, `GBB_SAMEBOY_CGB_CAPTURE` and `GBB_SAMESUITE_ROM_DIR` when running
+`tests/samesuite_alignment_reference_tests.py` to enable the paired native check.
+The experimental comparison retains the measured failures and returns 1 until
+protocols and curves pass in both emulators; tool-contract success is separate.

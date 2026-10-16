@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add opt-in pinned SameSuite CH1/CH2 alignment comparisons against SameBoy,
+  with repeated explicit protocol results, complete 48-sample PCM curves and
+  capture-after-completion checks; retain the measured phase discrepancy.
+
 - Correct SameSuite APU revision selection in both external reports and direct
   CTest registration; retain unsupported revisions explicitly instead of
   substituting CGB-E/CGB-C, and route AGB-specific tests to the AGB profile.
