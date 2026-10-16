@@ -272,9 +272,71 @@ GBB_SAMEBOY_CGB_CAPTURE=/external/sameboy-cgb-capture \
   python3 tests/cgb_pcm_stat_probe_tests.py
 ```
 
-Next combine the authored timer sample producer with a STAT scroll consumer, then
-add controlled VBlank APU updates. That will test interrupt interaction and data
-handoff before attributing the full demo's differences to an individual subsystem.
+## Combined timer/STAT/VBlank probes
+
+`scripts/cgb_combined_irq_probe.py` extends the authored pulse and wave controls
+with a mode-2 STAT consumer of the timer's sample buffer. It preserves the timer's
+HL cursor and maps the selected amplitude to SCX. Its longer handler may write
+during mode 3; this differs deliberately from the isolated early-write control.
+Two further scenarios reset sampling and retrigger the channel on each VBlank,
+alternating pulse amplitude 5/15 or wave amplitude 7/15. The VBlank counter,
+completion flag, amplitude constraints and buffer guard validate these handoffs.
+
+```sh
+python3 scripts/cgb_combined_irq_probe.py \
+  --runner ./build/gbb_test_runner \
+  --sameboy-capture /external/sameboy-cgb-capture \
+  --output /external/cgb-combined-irq-results
+```
+
+Use the same pinned library, adapter and freshly built GBB runner as above.
+The four scenarios at both speeds capture frames 2, 3 and 4 twice per emulator:
+24 paired checkpoints, 96 captures. The shared bounded harness checks both PCM
+sequences and RGB pixels, retaining separate match flags, first sample/pixel
+differences and total differing pixels. Combined tuples record PCM12, PCM34, LY
+and **TIMA**, replacing DIV at the same instruction cost for finer phase evidence.
+TIMA increments every 16 CPU T-cycles here; it is a coarse phase observation, not
+an exact instruction timestamp. Reports include phase mismatch indices, commands,
+ROM/boot/executable hashes and reference metadata; no frame shifts are applied.
+
+Local evidence on 2026-10-16: every authored completion, guard, channel/amplitude
+and VBlank-count check passed, and all captures repeated exactly. However, every
+paired checkpoint differed in both PCM samples and pixels. Frame-2 results:
+
+| Scenario | Speed | Different PCM tuples (of 64) | Different pixels (of 23,040) |
+| --- | --- | --- | --- |
+| Combined pulse | Normal | 19 | 6,560 |
+| Combined wave | Normal | 27 | 10,240 |
+| VBlank pulse | Normal | 15 | 4,800 |
+| VBlank wave | Normal | 25 | 8,480 |
+| Combined pulse | Double | 12 | 4,160 |
+| Combined wave | Double | 32 | 11,040 |
+| VBlank pulse | Double | 3 | 960 |
+| VBlank wave | Double | 14 | 4,480 |
+
+In the fixed pulse case, the first normal-speed PCM difference is sample 6; at
+double speed it is sample 4. TIMA already differs at sample 1 (GBB 240, SameBoy
+241) at either speed, before those PCM differences. This supplies a smaller
+reproducer for timer/STAT interaction than the full demo. It does not yet identify
+the incorrect emulator or prove that all GBVisualizer differences share this cause.
+VBlank updates are unnecessary to reproduce the fixed-channel disagreement.
+
+The research comparison returns **1**, preserves `qualification=false` and retains
+all mismatches; it is not a passing reference gate. The automated contract checks
+ROM/header validity, handoff constraints, repeatability and truthful reporting.
+It intentionally permits a future emulator correction to make the paired images
+match rather than requiring today's mismatch forever. Offline CTest registers
+`gameboy_cgb_combined_irq_probe_contract`; optional native validation is:
+
+```sh
+GBB_TEST_RUNNER=./build/gbb_test_runner \
+GBB_SAMEBOY_CGB_CAPTURE=/external/sameboy-cgb-capture \
+  python3 tests/cgb_combined_irq_probe_tests.py
+```
+
+Next isolate mode-2 STAT assertion and timer interrupt-service latency around the
+first phase divergence using a short authored timing probe. Establish the timing
+contract before changing CPU, PPU or APU behavior.
 
 Keep three results separate: GBB's own deterministic screenshot regression,
 GBB-versus-SameBoy frame/PCM behavior, and audio waveform comparison. In

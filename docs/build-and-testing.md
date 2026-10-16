@@ -325,6 +325,10 @@ Isolated timer/PCM and STAT/SCX comparisons are covered by
 `gameboy_cgb_pcm_stat_probe_contract`, with optional paired native tests and an
 authored pixel oracle; the guide records the tested cases and remaining combined
 interrupt coverage.
+`gameboy_cgb_combined_irq_probe_contract` checks the authored combined producer/
+consumer and VBlank-update probes. Their paired comparison currently reports PCM
+and pixel differences; a passing tool contract does not qualify those results as
+reference parity. See the guide for the first timer-phase divergence.
 
 ## Hardware-model matrix
 

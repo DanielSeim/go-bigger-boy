@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add authored combined CGB timer/STAT/VBlank probes with controlled APU updates,
+  sample handoff checks, timer-phase and first-pixel diagnostics; report reference
+  differences without changing core timing or qualifying a hardware baseline.
+
 - Add authored CGB timer/PCM and STAT/SCX probes with separate sample and pixel
   comparisons, normal/double-speed controls, bounded snapshots and optional
   SameBoy WRAM capture; keep emulator timing and external demo assets unchanged.

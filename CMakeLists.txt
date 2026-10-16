@@ -781,6 +781,9 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_cgb_pcm_stat_probe_contract
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_pcm_stat_probe_tests.py)
+        add_test(NAME gameboy_cgb_combined_irq_probe_contract
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_combined_irq_probe_tests.py)
         add_test(NAME gameboy_external_suite_harness
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/external_suite_tests.py)

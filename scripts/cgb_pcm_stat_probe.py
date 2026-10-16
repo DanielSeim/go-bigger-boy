@@ -100,23 +100,26 @@ def samples(data, scenario):
                 pcm_sha256=hashlib.sha256(bytes(v for row in pcm for v in row)).hexdigest())
 
 
-def run_probe(runner, adapter, output):
+def run_probe(runner, adapter, output, *, scenarios=SCENARIOS, checkpoints=(2, 4),
+              rom_builder=probe_rom, analyzer=None, compare_pixels=False,
+              schema='gbb-cgb-pcm-stat-probe-v1'):
     output.mkdir(parents=True, exist_ok=False)
     boot_data = anchor.owned_boot()
     boot = output / 'owned-cgb-boot.bin'
     boot.write_bytes(boot_data)
-    report = dict(schema='gbb-cgb-pcm-stat-probe-v1', qualification=False, model='cgb-e',
+    report = dict(schema=schema, qualification=False, model='cgb-e',
                   boot_sha256=hashlib.sha256(boot_data).hexdigest(),
                   runner_sha256=hashlib.sha256(runner.read_bytes()).hexdigest(),
                   adapter_sha256=hashlib.sha256(adapter.read_bytes()).hexdigest(), commands=[], rows=[])
     for double_speed in (False, True):
-        for scenario in SCENARIOS:
+        for scenario in scenarios:
             name = f'{scenario}-{"double" if double_speed else "normal"}'
-            rom_data = probe_rom(scenario, double_speed)
+            rom_data = rom_builder(scenario, double_speed)
             rom = output / (name + '.gbc')
             rom.write_bytes(rom_data)
-            for frame in (2, 4):
+            for frame in checkpoints:
                 captures = {}
+                pixel_bytes = {}
                 for emulator in ('gbb', 'sameboy'):
                     takes = []
                     for take in (1, 2):
@@ -135,6 +138,8 @@ def run_probe(runner, adapter, output):
                         if result.returncode:
                             raise ValueError(f'{emulator} capture failed: exit {result.returncode}')
                         capture = anchor.read_capture(image)
+                        if compare_pixels:
+                            pixel_bytes[emulator] = image.read_bytes()[15:]
                         if emulator == 'sameboy':
                             metadata = json.loads(result.stdout)
                             required = dict(schema='gbb-sameboy-cgb-capture-v1', qualification=False,
@@ -147,7 +152,9 @@ def run_probe(runner, adapter, output):
                         memory = state.read_bytes()
                         if len(memory) != (8192 if emulator == 'sameboy' else 8352):
                             raise ValueError('unexpected state size')
-                        if scenario.startswith('scroll'):
+                        if analyzer is not None:
+                            capture.update(analyzer(memory, scenario, frame))
+                        elif scenario.startswith('scroll'):
                             capture['authored_constraints_match'] = capture['rgb_sha256'] == hashlib.sha256(
                                 expected_scroll(scenario)).hexdigest()
                         else:
@@ -159,9 +166,30 @@ def run_probe(runner, adapter, output):
                 key = 'rgb_sha256' if scenario.startswith('scroll') else 'pcm_sha256'
                 row['comparison'] = 'pixels' if key == 'rgb_sha256' else 'pcm_samples'
                 row['match'] = captures['gbb'][key] == captures['sameboy'][key]
+                if compare_pixels:
+                    row['pixel_match'] = captures['gbb']['rgb_sha256'] == captures['sameboy']['rgb_sha256']
+                    row['pcm_match'] = row['match']
+                    row['match'] = row['match'] and row['pixel_match']
+                    row['comparison'] = 'pcm_samples_and_pixels'
+                    a, b = pixel_bytes['gbb'], pixel_bytes['sameboy']
+                    differences = [i for i in range(160 * 144) if a[i * 3:i * 3 + 3] != b[i * 3:i * 3 + 3]]
+                    row['different_pixel_count'] = len(differences)
+                    row['first_pixel_difference'] = None
+                    if differences:
+                        i = differences[0]
+                        row['first_pixel_difference'] = dict(x=i % 160, y=i // 160,
+                            gbb=list(a[i * 3:i * 3 + 3]), sameboy=list(b[i * 3:i * 3 + 3]))
                 if key == 'pcm_sha256':
                     row['different_sample_indices'] = [i for i, (a, b) in enumerate(zip(
                         captures['gbb']['pcm'], captures['sameboy']['pcm'])) if a != b]
+                    row['first_sample_difference'] = None
+                    if row['different_sample_indices']:
+                        i = row['different_sample_indices'][0]
+                        row['first_sample_difference'] = dict(index=i,
+                            gbb=captures['gbb']['samples'][i], sameboy=captures['sameboy']['samples'][i])
+                    if captures['gbb'].get('sample_fields') == ['pcm12', 'pcm34', 'ly', 'tima']:
+                        row['different_timer_phase_indices'] = [i for i, (a, b) in enumerate(zip(
+                            captures['gbb']['samples'], captures['sameboy']['samples'])) if a[3] != b[3]]
                 report['rows'].append(row)
     (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     return report
