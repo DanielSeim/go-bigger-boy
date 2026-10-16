@@ -155,6 +155,62 @@ LCD/VBlank and PCM sampling probes before diagnosing the demo's pixel difference
 or promoting any output to a required regression gate. No arbitrary frame offset
 has been applied.
 
+## Authored frame-anchor probes
+
+`scripts/cgb_frame_anchor_probe.py` builds its own ROM bytes without RGBDS or
+external cartridge inputs. Four scenarios combine normal/double speed with
+zero/4,096 iterations of an extra LCD-off delay. A VBlank handler increments a
+counter and programs the next visible frame's solid red palette marker. Captures
+at frames 1, 2, 4 and 8 are checked against the authored marker and each other,
+twice per emulator; frame numbers are never shifted. Use the same pinned adapter
+and library as above, and rebuild the GBB runner from this checkout so its bundled
+boot matches the image exported by the probe:
+
+```sh
+python3 scripts/cgb_frame_anchor_probe.py \
+  --runner ./build/gbb_test_runner \
+  --sameboy-capture /external/sameboy-cgb-capture \
+  --output /external/cgb-frame-anchor-results
+```
+
+The output directory must be new. The report includes commands, ROM/boot and
+executable hashes, reference metadata, RGB hashes, marker results and repeatability.
+Record the SameBoy library revision/build separately; the adapter executable hash
+alone cannot identify a dynamically linked library. Exit 0 means all authored
+markers and paired pixels matched repeatably; exit 1 means a reported difference;
+exit 2 means execution, input or metadata failure. Reports always keep
+`qualification=false`: these probes do not establish hardware correctness.
+
+Local results with the pins above: all 64 captures were repeatable. In every
+scenario GBB frame 1 was RGB `(8,0,0)`, the programmed marker, while SameBoy frame
+1 was white `(255,255,255)`. Frames 2, 4 and 8 matched exactly and had the expected
+markers `(16,0,0)`, `(33,0,0)` and `(66,0,0)`. The probe therefore exits 1;
+the first-frame difference is preserved, not accepted as a passing comparison.
+SameBoy checkpoint spacing was 140,448 8 MHz clocks per frame at either CPU speed.
+The added delay increased checkpoint times by 229,392 8 MHz clocks in both variants.
+
+Inspection of the pinned SameBoy `Core/display.c`, `GB_display_vblank` and the
+LCD-turn-on path, shows an explicit white output while its LCD-turn-on frame-skip
+state is active, even for a normal-frame callback. This explains that reference
+capture's white first frame; it does not establish which emulator matches hardware.
+The later markers argue against a persistent frame-number offset in these probes.
+They do **not** explain GBVisualizer's later image differences or establish exact
+interrupt/PCM sampling timing. Emulator behavior remains unchanged.
+
+Offline CTest registers `gameboy_cgb_frame_anchor_probe_contract`. An optional
+paired native test records the pinned reference's first-frame distinction and
+requires subsequent markers and repeatability:
+
+```sh
+GBB_TEST_RUNNER=./build/gbb_test_runner \
+GBB_SAMEBOY_CGB_CAPTURE=/external/sameboy-cgb-capture \
+  python3 tests/cgb_frame_anchor_probe_tests.py
+```
+
+Next isolate timer-driven PCM sampling and STAT/SCX rendering with authored probes;
+keep the LCD-turn-on presentation difference as a separate hardware-validation
+question rather than offsetting the demo's captures.
+
 Keep three results separate: GBB's own deterministic screenshot regression,
 GBB-versus-SameBoy frame/PCM behavior, and audio waveform comparison. In
 particular, the oscilloscope visualizes digital register amplitudes; it does not

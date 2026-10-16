@@ -318,6 +318,9 @@ qualified pixel gate or bundled test ROM. The guide includes a pinned external
 builder, CGB SameBoy capture adapter and opt-in native tests, plus the distinction
 between CPU-cycle and PPU-frame checkpoints at double speed. The offline tooling
 contract is registered as `gameboy_gbvisualizer_reference_tools_contract`.
+The authored normal/double-speed LCD/VBlank marker probes have their own offline
+`gameboy_cgb_frame_anchor_probe_contract` and optional paired native tests;
+see the same guide for the reported first-frame distinction.
 
 ## Hardware-model matrix
 

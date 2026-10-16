@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add authored CGB VBlank palette-marker probes for normal/double speed and
+  LCD-off startup delays, preserving and reporting first-frame reference
+  differences without offsetting captures or changing emulation behavior.
+
 - Add opt-in pinned GBVisualizer build tooling and a CGB SameBoy capture adapter,
   with offline contracts and optional native tests; keep external assets and
   unqualified cross-emulator captures outside the repository.

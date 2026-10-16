@@ -775,6 +775,9 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_gbvisualizer_reference_tools_contract
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/gbvisualizer_reference_tools_tests.py)
+        add_test(NAME gameboy_cgb_frame_anchor_probe_contract
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_frame_anchor_probe_tests.py)
         add_test(NAME gameboy_external_suite_harness
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/external_suite_tests.py)
