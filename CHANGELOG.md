@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Record a before/after regression comparison for the BullyGB fixes: all 168
+  conformance cases pass, all 166 AGE/SameSuite statuses are unchanged, and
+  all 17 AGE captures are byte-identical; preserve build and input provenance.
+
 - Fix BullyGB failures from cleared WRAM, native CGB boot phases, missing
   monochrome boot-logo VRAM, FF74 and OAM DMA bus conflicts. Five profiles now
   pass the unmodified suite; retain the CGB0 DIV mismatch also observed with

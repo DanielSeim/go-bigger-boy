@@ -1,0 +1,58 @@
+{
+  "schema": "gbb-bullygb-regression-evidence-v1",
+  "qualification": false,
+  "date": "2026-10-16",
+  "before_commit": "4039af76f03c0300df0218508c85a9d69186bb53",
+  "after_commit": "f38d0702807b611cfc3d42d054e4b2e0d1a66094",
+  "bundle": {
+    "url": "https://github.com/c-sp/game-boy-test-roms/releases/download/v7.0/game-boy-test-roms-v7.0.zip",
+    "sha256": "b9a9d7a1075aa35a3d07c07c34974048672d8520dca9e07a50178f5860c3832c"
+  },
+  "build": {
+    "type": "Release",
+    "tests": true,
+    "sdl": false
+  },
+  "runner_sha256": {
+    "before": "9b3a2b403b431a28f2814a1f5359ef7e71f35093980feeccaae5372b77eab75b",
+    "after_conformance": "11c426de88157507c62b2404047df97f5b63021d649d7cfc01b2e2050eb549a1",
+    "after_research": "f1ad3b9f5c0fe2b7e644d50c0bfb15f779849e1935d6e7273e25c9792662fde8"
+  },
+  "conformance": {
+    "before": {
+      "passed": 168,
+      "failed": 0
+    },
+    "after": {
+      "passed": 168,
+      "failed": 0
+    }
+  },
+  "research": {
+    "cases": 166,
+    "identical_statuses": 166,
+    "pass_to_failure": 0,
+    "suites": {
+      "age-test-roms": {
+        "passed": 9,
+        "failed": 75,
+        "info": 0
+      },
+      "same-suite": {
+        "passed": 36,
+        "failed": 44,
+        "info": 2
+      }
+    },
+    "matched_case_status_sha256": "a5e3aeadbacdf9c1501fe89c0530d5e2bb6555cbd0f104f5644c83ec40f94346",
+    "visual_captures": 17,
+    "byte_identical_visual_captures": 17
+  },
+  "limits": [
+    "Research failures remain unresolved; unchanged statuses do not establish hardware accuracy.",
+    "One execution per case and build; timing is not a benchmark.",
+    "BullyGB CGB0 applicability disagreement is recorded separately.",
+    "Upstream assets and generated captures remain external."
+  ],
+  "rom_executions": 664
+}

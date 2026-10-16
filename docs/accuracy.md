@@ -21,7 +21,7 @@ optional suites, local firmware/reference files and frontend dependencies.
 | Visual PPU | 21 | Acid2, Scribbltests, Mealybug, and Gambatte framebuffer comparisons |
 | GBMicrotest | matrix-only | HRAM self-checking cycle-accuracy ROMs from the pinned v7.0 bundle |
 | Mooneye-wilbertpol | matrix-only | Extended Mooneye acceptance/misc/emulator-only ROMs (manual-only cases excluded) |
-| AGE and SameSuite | research report | AGE screenshot references plus SameSuite hardware diagnostics, outside the release gate |
+| AGE, SameSuite and BullyGB | research report | AGE screenshots, SameSuite diagnostics and pinned BullyGB aggregate results, outside the release gate |
 | Total release gate | **168** | The reviewed fixed baseline must pass before a release can be published |
 
 The acceptance figure covers every acceptance ROM in the pinned bundle. Tests with
@@ -60,6 +60,61 @@ build and state/reset contracts, and [DMG boot validation](dmg-boot-validation.m
 for the execution-only local comparison, verified LCD fixes and remaining
 timer/audio differences. It is not used to
 inflate the existing post-boot conformance results.
+
+### BullyGB follow-up regression comparison
+
+On 2026-10-16 the startup/WRAM/FF74/OAM-DMA fixes in `f38d070` were compared
+with pre-fix commit `4039af7` using the same verified v7.0 bundle. Both runners
+were built headlessly in Release mode; existing expected results and suite gates
+were retained. The results are observations from this comparison, separate from
+the registered baseline counts above.
+
+| Coverage | Before | After | Change |
+| --- | --- | --- | --- |
+| Required conformance | 168 pass, 0 fail | 168 pass, 0 fail | No regressions |
+| AGE research | 9 pass, 75 fail | 9 pass, 75 fail | All 84 case statuses identical |
+| SameSuite research | 36 pass, 44 fail, 2 informational | 36 pass, 44 fail, 2 informational | All 82 case statuses identical |
+| AGE visual captures | 17 captures | 17 captures | Every PPM byte-identical |
+
+This covers **334 paired report entries and 664 ROM executions**; the two
+informational rows on each side do not execute ROMs. Existing research failures
+are still failures; unchanged results do not qualify them as correct hardware
+behavior. The independently verified BullyGB results remain five aggregate passes
+and the CGB0 DIV disagreement documented in the build guide.
+
+[Machine-readable provenance](../tests/fixtures/external-reference/bullygb-regression.json)
+records full commit IDs, bundle and runner hashes, build settings, case-status
+fingerprint and comparison limits. Source snapshots, upstream ROMs, generated
+captures and raw logs stayed outside the repository. The two after-runner hashes
+distinguish the existing headless build used for research captures from the fresh
+build used for conformance; both use the same committed core sources. Elapsed
+execution times are not used as performance evidence.
+
+Reproduce each side by checking out the recorded commit into an isolated
+directory, verifying/extracting the pinned bundle, and configuring:
+
+```sh
+cmake -S /external/source -B /external/build -DCMAKE_BUILD_TYPE=Release \
+  -DGAMEBOY_BUILD_TESTS=ON -DGAMEBOY_BUILD_SDL=OFF \
+  -DGAMEBOY_TEST_ROM_DIR=/external/game-boy-test-roms-v7.0
+cmake --build /external/build --target gameboy_test_runner --parallel 2
+ctest --test-dir /external/build -L conformance -j4 --output-on-failure
+python3 /external/source/tests/run_external_suites.py \
+  --runner /external/build/gbb_test_runner \
+  --rom-root /external/game-boy-test-roms-v7.0 \
+  --suite age-test-roms --suite same-suite --jobs 4 \
+  --output /external/results/report.md
+```
+
+Use distinct build and result directories for the two commits. Compare case IDs
+and profiles as well as totals; comparing totals alone can hide a new failure
+balanced by an unrelated improvement.
+
+Before using SameSuite failures to guide further audio fixes, correct the
+APU model filtering: the current fallback runs some `-cgb0`, `-cgbB` and `-A`
+ROMs on CGB-E. Those labels identify specific revisions/families and cannot
+support a CGB-E accuracy verdict. Unsupported revisions should remain visible
+without being silently mapped to another model.
 
 ### Additional pinned-bundle suites
 
@@ -117,9 +172,10 @@ python3 scripts/differential_test.py --candidate build-desktop/gbb_test_runner \
 This makes the reference connection reproducible while keeping the external
 emulator and any proprietary ROM/reference assets outside the repository.
 
-The upstream collection also contains visual or interactive suites (Bully,
-cgb-acid-hell, MBC3 Tester, rtc3test, TurtleTests, and parts of
-little-things-gb). Their ROMs and references remain documented by the bundle,
+BullyGB v1.2 now has an explicit terminal-screen protocol and a separately pinned
+research run; see [build and testing](build-and-testing.md#bullygb-external-research-suite).
+The remaining visual or interactive suites include cgb-acid-hell, MBC3 Tester, rtc3test, TurtleTests, and parts of
+little-things-gb. Their ROMs and references remain documented by the bundle,
 but they are not registered by the external runner yet: each needs
 suite-specific frame timing, input scripting, or screenshot selection. This
 distinction prevents a timeout or an unreviewed screenshot from being reported
