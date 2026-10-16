@@ -838,10 +838,74 @@ many samples are insensitive to the offset. Predicted request alignment still
 assumes the reload and bus-sampling phases described above. Core timing remains
 unchanged, `qualification=false`, and the complete comparison returns **1**.
 
-Next turn the minimal first-vector witness into a hardware-runnable conformance
-ROM with a bounded result protocol and visible outcome, then obtain independent
-hardware results before changing core timing. Keep STAT arbitration and double-speed LY separate from this
-remaining timer question.
+### Hardware-runnable first-vector witness
+
+```sh
+python3 scripts/build_cgb_irq_div_hardware.py \
+  --output /external/cgb-irq-div-hardware
+```
+
+The standard-library-only builder emits eight authored 32-KiB ROM-only CGB
+cartridges: timer, software IF at -4/0/+4 CPU T-cycles, each at normal/double
+speed. The default start phase 44 and read phase 3 place the disputed DIV read
+at the predicted T256 boundary. `--start-phase` and `--read-phase` select other
+phases already used by the capture probe. A fresh output directory is required.
+`manifest.json` records ROM hashes, generator/measurement-source hashes and
+`qualification=false`; no upstream ROMs, fonts, boot firmware or assets are
+bundled. The header includes the standard compatibility logo, CGB-only flag,
+ROM size/type and valid checksums so an actual CGB boot can accept the cartridge.
+
+Load each `.gbc` on a CGB-compatible flash cartridge. The ROM safely disables the
+boot LCD during VBlank, clears CGB BG attributes, then runs the original measured
+path. The vector and startup through the request's first 16 NOPs are unchanged;
+all new setup precedes the DIV-reset anchor. The valid IRQ path freezes the
+original WRAM observations before display code runs. A missing interrupt reaches
+a failure continuation after those 16 NOPs instead of looping forever.
+
+The persistent monochrome screen uses independently drawn glyphs and displays:
+
+- Request source, CPU speed (1=normal, 2=double), start/read phase.
+- Raw `DIV`, `TIMA`, `IF` and `GUARD` bytes.
+- `DONE` when completion/guard/acknowledgement checks pass, otherwise `ERROR`.
+
+Phase and register fields are hexadecimal: start phase 44 appears as `2C`.
+IF's reserved upper bits remain visible, so `E0` means no low-five-bit requests
+are pending. `GUARD` must be `A5`. DIV values 00 and 01 are both accepted as
+measurements; software cases additionally require stopped TIMA=FF. The ROM
+exposes the existing Mooneye success/failure register signatures at `LD B,B`
+after drawing. **PASS/DONE means the measurement completed structurally; it
+never establishes timer/reference parity.** No full trace or cartridge save is
+needed, and both raw results remain on screen with IRQs disabled.
+
+Use the existing runner protocol to verify completion, then frame capture to
+inspect the screen (the capture mode intentionally does not exit at the protocol
+breakpoint):
+
+```sh
+./build/gbb_test_runner /external/cgb-irq-div-hardware/timer-start-44-read-3-normal.gbc \
+  --model cgb-e --dmg-boot --protocol mooneye --max-cycles 20000000
+./build/gbb_test_runner /external/cgb-irq-div-hardware/timer-start-44-read-3-normal.gbc \
+  --model cgb-e --dmg-boot --frame-series 4 4 /external/hardware-screen \
+  --frame-state-series --max-cycles 20000000
+```
+
+Local emulator validation on 2026-10-16 exercised all eight variants in GBB and
+pinned SameBoy, with repeated captures, completion signatures, screen-tile/WRAM
+correspondence and a deliberately disabled-IRQ failure in both cores. The raw
+hardware-wrapper observations matched the original witness in each emulator;
+the disputed timer DIV outcome is retained. The native test also verifies the
+persistent `ERROR` screen on failure. CTest registers
+`gameboy_cgb_irq_div_hardware_contract`; set `GBB_TEST_RUNNER` and
+`GBB_SAMEBOY_CGB_CAPTURE` for native checks in
+`tests/cgb_irq_div_hardware_tests.py`.
+
+No physical-hardware result has been collected. For independent validation,
+record the manifest hash, ROM SHA-256, CGB model/revision, flash cartridge and
+loader version, speed/source, and a photograph of each persistent raw result.
+Repeat after reset and preserve both observations without choosing an expected
+DIV value. Next collect these hardware measurements before changing timer
+request acceptance; keep STAT arbitration and double-speed LY separate.
+
 
 Keep three results separate: GBB's own deterministic screenshot regression,
 GBB-versus-SameBoy frame/PCM behavior, and audio waveform comparison. In

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add reproducible CGB hardware DIV-witness ROMs with boot-compatible headers,
+  visible raw results, completion-only Mooneye signatures and a bounded missing-IRQ
+  failure path; leave the disputed hardware timing outcome unclassified.
+
 - Add an opt-in first-vector DIV sweep with software timer-IF requests one
   machine cycle before and after the predicted hardware reload, preserving
   existing probe ROMs and keeping shifted controls separate from parity gates.

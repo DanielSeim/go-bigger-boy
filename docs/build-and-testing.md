@@ -527,6 +527,14 @@ external tools. Set `GBB_TEST_RUNNER` and `GBB_SAMEBOY_CGB_CAPTURE` when running
 `tests/cgb_irq_div_probe_tests.py` to enable the native 192-pair request-phase comparison. The probe CLI retains
 the 96-pair default; `--request-phase-sweep` adds software IF one machine cycle
 before and after the predicted hardware request.
+`gameboy_cgb_irq_div_hardware_contract` checks the standalone hardware-witness
+builder's deterministic headers and unchanged measurement path. Its optional
+native test uses the same two environment variables to verify persistent raw
+results, completion-only signatures and bounded missing-interrupt failure.
+Build the eight flash-cartridge ROMs with
+`python3 scripts/build_cgb_irq_div_hardware.py --output /external/hardware-roms`;
+physical-hardware results remain a separate validation step.
+
 
 Compare captures from two builds or devices without rerunning the ROM:
 
