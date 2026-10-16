@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add opt-in pinned Mooneye timer builds and explicit SameBoy Mooneye result
+  detection, with repeatable CGB0/CGB-C/CGB-E comparisons and offline fail-closed
+  contracts; retain the unresolved fast-timer HALT sampling case separately.
+
 - Add authored CGB overflow/reload boundary probes with an independent timer
   prediction, straight-line and HALT controls, separate LY/STAT diagnostics and
   explicit reporting of unresolved reload-cycle reads.

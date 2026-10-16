@@ -47,8 +47,11 @@ def probe_rom(double_speed=False, delay=0):
     return bytes(rom)
 
 
-def owned_boot():
-    header = (ROOT / 'firmware/gameboy/cgb_boot_image.hpp').read_text()
+def owned_boot(model='cgb-e'):
+    names = {'cgb-e': 'cgb', 'cgb-c': 'cgb', 'cgb0': 'cgb0'}
+    if model not in names:
+        raise ValueError('unsupported owned CGB boot model')
+    header = (ROOT / f'firmware/gameboy/{names[model]}_boot_image.hpp').read_text()
     data = bytes(int(n, 16) for n in re.findall(r'0x([0-9a-fA-F]{2})', header))
     if len(data) != 256:
         raise ValueError('unexpected owned CGB boot image')

@@ -167,6 +167,29 @@ class NativeCaptureContracts(unittest.TestCase):
         self.assertEqual(memory.read_bytes(), saved)
         self.assertEqual(result.stdout, '')
 
+    def test_mooneye_protocol_pass_fail_timeout_and_plain_breakpoint(self):
+        def run(budget='20000000', model='cgb-e'):
+            return subprocess.run([ADAPTER, '--mooneye', str(self.rom), str(self.boot), model, budget],
+                                  capture_output=True, text=True, timeout=20)
+        self.write_rom(bytes.fromhex('06 03 0e 05 16 08 1e 0d 26 15 2e 22 40 18 fe'))
+        first, second = run(), run()
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(first.stdout, second.stdout)
+        data = json.loads(first.stdout)
+        self.assertEqual(data['result'], 'pass')
+        self.assertEqual((data['bc'], data['de'], data['hl']), (0x0305, 0x080d, 0x1522))
+        self.write_rom(bytes.fromhex('06 42 0e 42 16 42 1e 42 26 42 2e 42 40 18 fe'))
+        failed = run()
+        self.assertEqual(failed.returncode, 1)
+        self.assertEqual(json.loads(failed.stdout)['result'], 'fail')
+        self.write_rom(bytes.fromhex('40 18 fd'))  # Ordinary LD B,B is not a result.
+        timed_out = run()
+        self.assertEqual(timed_out.returncode, 3)
+        self.assertEqual(json.loads(timed_out.stdout)['result'], 'timeout')
+        self.assertEqual(run(model='dmg').returncode, 2)
+        self.rom.unlink()
+        self.assertEqual(run().returncode, 4)
+
 
 if __name__ == '__main__':
     unittest.main()

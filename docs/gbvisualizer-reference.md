@@ -532,10 +532,79 @@ GBB_SAMEBOY_CGB_CAPTURE=/external/sameboy-cgb-capture \
   python3 tests/cgb_timer_boundary_probe_tests.py
 ```
 
-Next validate the exact reload-cycle CPU read against pinned hardware-backed
-conformance evidence, adding the 16-cycle/HALT boundary case where needed, before
-changing bus sampling. Keep the remaining STAT arbitration and double-speed LY
-boundaries separate from this isolated timer-register question.
+## Pinned external Mooneye timer validation
+
+`scripts/mooneye_timer_reference.py` builds five unmodified external Mooneye timer
+tests: `tima_reload`, `tima_write_reloading`, `tma_write_reloading`, `tim01` and
+`tim10`. The metadata/ROM hashes are pinned in
+`tests/fixtures/external-reference/mooneye-timer.json`:
+
+- Mooneye commit `31510e12eea6286d36eea060a6adde755e1067aa`.
+- WLA-DX assembler/linker commit `7ae11df1657dafab1f5fa662889d005709fec15e`.
+- SameBoy commit `208ba4afabffab9edde416f2dbb8ae459e34adb8`, as above.
+
+Supply clean checkouts of those exact commits; the tool does not download them.
+It builds WLA-DX with CMake Release and the selected ROMs through the upstream
+Makefile, placing products outside the source checkouts. Unexpected ROM hashes
+fail before emulator execution. Source, ROMs and build products remain external.
+Use a fresh GBB runner and recompile the SameBoy adapter from this checkout:
+
+```sh
+python3 scripts/mooneye_timer_reference.py \
+  --source /external/mooneye-test-suite \
+  --assembler-source /external/wla-dx \
+  --runner ./build/gbb_test_runner \
+  --sameboy-capture /external/sameboy-cgb-capture \
+  --output /external/mooneye-timer-results
+```
+
+The output directory must be new. CMake, make and a C compiler are needed only
+for this opt-in run. `--assembler-build /external/wla-build` can reuse a build
+directory; it is reconfigured/rebuilt against the pinned clean source. The
+report records source pins, binary/ROM/boot hashes, commands, result output and
+repeatability. Record the dynamically linked SameBoy library build separately.
+Every test runs twice on both emulators for CGB0, CGB-C and CGB-E: 15 model/test
+cases, 30 emulator results, 60 executions. CGB0 uses the exported owned CGB0 boot
+(SHA-256 `9120799ac51cabffc521f126cde6789c49f885984f1d7562814eb2bd02273ea6`);
+CGB-C/E use the owned CGB boot above, matching GBB's model selection. No Nintendo
+boot image is used.
+
+The adapter now accepts `--mooneye ROM BOOT [MODEL] [MAX_8MHZ_CLOCKS]`. It uses
+SameBoy's public execution callback to detect `LD B,B` together with the explicit
+success registers BC=0305, DE=080D, HL=1522 or failure registers all 42. An ordinary
+`LD B,B` without either signature is not a result. JSON includes the model,
+result, registers and elapsed 8 MHz clocks. Pass returns 0, explicit test failure
+1, argument errors 2, timeout/no progress 3, and load errors 4. No screenshot is
+written in protocol mode. Existing capture behavior remains covered by native
+tests. The harness rejects unexpected zero-exit output, wrong models/signatures,
+missing cases and nonrepeatable results; only complete success returns 0.
+
+Local results on 2026-10-16: all 60 executions passed and repeated identically;
+the ROM hashes matched across separate output builds. These are software runs
+of upstream hardware-tested cases, not new physical hardware measurements.
+The hardware-verified test expectations are documented in the pinned
+[Mooneye reload source](https://github.com/Gekkio/mooneye-test-suite/blob/31510e12eea6286d36eea060a6adde755e1067aa/acceptance/timer/tima_reload.s).
+The report retains `qualification=false`: passing these tests does not resolve
+our exact fast-timer HALT/read collision. `tima_reload` uses a 64-T-cycle timer;
+`tim01` checks the fast timer but is not the same reload/read alignment. Both
+emulators can pass these controls while disagreeing in the smaller reproducer.
+No CPU/timer behavior was changed in this step.
+
+Offline CTest registers `gameboy_mooneye_timer_reference_contract`, checking pin
+rejection, hash validation, model-specific boot images, complete coverage and
+explicit result parsing without external inputs. The existing optional native
+adapter tests exercise authored success/failure/timeout and false-breakpoint ROMs:
+
+```sh
+GBB_SAMEBOY_CGB_CAPTURE=/external/sameboy-cgb-capture \
+  python3 tests/gbvisualizer_reference_tools_tests.py
+```
+
+Next decouple timer-start padding from read padding in the authored boundary
+probe, so foreground DI code can hit the same fast reload slot as the HALT case.
+That will separate a reload-read sampling difference from HALT wake-up before
+any further timing correction. Keep STAT arbitration and double-speed LY
+boundaries as separate questions.
 
 Keep three results separate: GBB's own deterministic screenshot regression,
 GBB-versus-SameBoy frame/PCM behavior, and audio waveform comparison. In

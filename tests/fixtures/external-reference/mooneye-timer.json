@@ -1,0 +1,16 @@
+{
+  "project": "mooneye-test-suite",
+  "repository": "https://github.com/Gekkio/mooneye-test-suite",
+  "commit": "31510e12eea6286d36eea060a6adde755e1067aa",
+  "assembler_repository": "https://github.com/vhelin/wla-dx",
+  "assembler_commit": "7ae11df1657dafab1f5fa662889d005709fec15e",
+  "sameboy_commit": "208ba4afabffab9edde416f2dbb8ae459e34adb8",
+  "distribution": "external-only; source and ROMs are not bundled",
+  "tests": {
+    "tima_reload": "1ca70c725bd1e027b07d3058839bd140eccddd9f4ca41305c4f8ab3acaff8a98",
+    "tima_write_reloading": "7d9a6d5ada792596621f8bfdf257112887b2dd01d98e0f91a253afd6e05d0540",
+    "tma_write_reloading": "e48ff98d4f363b92e92bdabe86253fcf63f648964e3a61e73d52aedcba3e5ab2",
+    "tim01": "b6f5043eae7fd2b2c3dc098ff16f664c8eb5699523616d84274669cf90c17fe7",
+    "tim10": "fe3b0b292341d5ff26c9db3f6c9f3ba8a3d6e8b63977c61767a457962bd1faed"
+  }
+}

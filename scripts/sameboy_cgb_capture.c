@@ -2,6 +2,7 @@
  * Optional public-Core-API reference adapter for pinned SameBoy v1.0.3.
  * ROM BOOT_ROM FRAMES OUTPUT.ppm [cgb-e|cgb-c|cgb0] [MAX_8MHZ_CLOCKS] [WRAM_OUTPUT]
  * Counts actual VBlanks; artificial LCD-off/repeat callbacks never advance N.
+ * Or: --mooneye ROM BOOT_ROM [cgb-e|cgb-c|cgb0] [MAX_8MHZ_CLOCKS]
  */
 #include "Core/gb.h"
 #include "Core/display.h"
@@ -33,15 +34,69 @@ static int number(const char *text, uint64_t limit, uint64_t *value) {
     if (errno || *end || !n || n>limit) return 0;
     *value=n;return 1;
 }
+static int model_from_name(const char *name, GB_model_t *model) {
+    if (!strcmp(name,"cgb-e")) *model=GB_MODEL_CGB_E;
+    else if (!strcmp(name,"cgb-c")) *model=GB_MODEL_CGB_C;
+    else if (!strcmp(name,"cgb0")) *model=GB_MODEL_CGB_0;
+    else return 0;
+    return 1;
+}
+static int protocol_result=-1;
+static void mooneye_instruction(GB_gameboy_t *gb, uint16_t address, uint8_t opcode) {
+    (void)address;
+    if (opcode!=0x40 || protocol_result!=-1) return;
+    const GB_registers_t *r=GB_get_registers(gb);
+    if (r->bc==0x0305 && r->de==0x080d && r->hl==0x1522) protocol_result=0;
+    else if (r->bc==0x4242 && r->de==0x4242 && r->hl==0x4242) protocol_result=1;
+}
+static int mooneye(int argc, char **argv) {
+    if (argc<4 || argc>6) return 2;
+    const char *name=argc>=5?argv[4]:"cgb-e";
+    GB_model_t model;
+    uint64_t limit=200000000;
+    if (!model_from_name(name,&model) ||
+        (argc==6 && !number(argv[5],UINT64_C(2000000000),&limit))) return 2;
+    GB_random_seed(0);
+    GB_gameboy_t *gb=GB_alloc();
+    if (!gb) return 3;
+    if (!GB_init(gb,model)) { GB_dealloc(gb);return 3; }
+    GB_set_log_callback(gb,log_message);
+    int result=4;
+    uint32_t pixels[160*144]={0};
+    if (GB_load_boot_rom(gb,argv[3]) || GB_load_rom(gb,argv[2])) goto done;
+    GB_debugger_set_disabled(gb,true);
+    GB_set_border_mode(gb,GB_BORDER_NEVER);
+    GB_set_color_correction_mode(gb,GB_COLOR_CORRECTION_DISABLED);
+    GB_set_rgb_encode_callback(gb,rgb);
+    GB_set_pixels_output(gb,pixels);
+    GB_set_turbo_mode(gb,true,true);
+    GB_set_turbo_cap(gb,0);
+    GB_set_execution_callback(gb,mooneye_instruction);
+    uint64_t clocks=0;
+    unsigned zero_steps=0;
+    while (protocol_result==-1 && clocks<limit) {
+        unsigned step=GB_run(gb);
+        if (!step && ++zero_steps>1024) { result=3;goto done; }
+        if (step) zero_steps=0;
+        clocks+=step;
+    }
+    const GB_registers_t *r=GB_get_registers(gb);
+    printf("{\"schema\":\"gbb-sameboy-mooneye-v1\",\"model\":\"%s\","
+           "\"result\":\"%s\",\"clocks_8mhz\":%" PRIu64 ","
+           "\"pc\":%u,\"bc\":%u,\"de\":%u,\"hl\":%u}\n",
+           name,protocol_result==0?"pass":protocol_result==1?"fail":"timeout",
+           clocks,r->pc,r->bc,r->de,r->hl);
+    result=protocol_result==-1?3:protocol_result;
+done:
+    GB_free(gb);GB_dealloc(gb);return result;
+}
 int main(int argc,char **argv) {
+    if (argc>=2 && !strcmp(argv[1],"--mooneye")) return mooneye(argc,argv);
     uint64_t target,limit=200000000;
     if (argc<5 || argc>8 || !number(argv[3],100000,&target)) return 2;
     const char *model_name=argc>=6?argv[5]:"cgb-e";
     GB_model_t model;
-    if (!strcmp(model_name,"cgb-e")) model=GB_MODEL_CGB_E;
-    else if (!strcmp(model_name,"cgb-c")) model=GB_MODEL_CGB_C;
-    else if (!strcmp(model_name,"cgb0")) model=GB_MODEL_CGB_0;
-    else return 2;
+    if (!model_from_name(model_name,&model)) return 2;
     if (argc>=7 && !number(argv[6],UINT64_C(2000000000),&limit)) return 2;
     GB_random_seed(0);
     GB_gameboy_t *gb=GB_alloc();

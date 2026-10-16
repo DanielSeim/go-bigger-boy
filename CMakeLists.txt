@@ -793,6 +793,9 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_cgb_timer_boundary_probe_contract
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_timer_boundary_probe_tests.py)
+        add_test(NAME gameboy_mooneye_timer_reference_contract
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/mooneye_timer_reference_tests.py)
         add_test(NAME gameboy_external_suite_harness
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/external_suite_tests.py)

@@ -341,6 +341,10 @@ software dispatch cases from remaining combined and demo differences.
 prediction and foreground/HALT read controls. Its unresolved reload-cycle sampling
 distinction is explicitly reported, with bus-phase assumptions and hardware
 validation limits documented in the same guide.
+`gameboy_mooneye_timer_reference_contract` checks the opt-in pinned external timer
+suite's provenance and explicit pass/fail handling. Its five Mooneye tests pass
+in both emulators on three CGB revisions; that evidence does not adjudicate the
+separate fast-timer HALT read collision. Public CI needs no external checkouts.
 
 ## Hardware-model matrix
 
