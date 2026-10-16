@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Add STOP/APU clock witnesses with active, untriggered and powered-off APU
+  controls at two pulse periods and both CPU speeds. Separate the observed
+  switch-time TIMA discrepancy from active-channel PCM phase differences;
+  preserve existing capture budgets and leave emulator timing unchanged.
+
 - Align CGB-E active pulse retriggers to the NR52-relative 1-MHz clock while
   retaining duty phase and AGB timing. All 48 isolated retrigger/control cases
   now match SameBoy; lifecycle matches rise from 6 to 16, leaving only the

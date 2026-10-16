@@ -787,3 +787,24 @@ ROM/executable hashes, repeated observations and differing indices, with
 `GBB_TEST_RUNNER` and `GBB_SAMEBOY_CGB_CAPTURE` for the complete native matrix
 in `tests/cgb_pulse_retrigger_probe_tests.py`. The lifecycle native contract now
 requires parity for all retrigger-only cases while retaining STOP differences.
+
+`scripts/cgb_stop_apu_probe.py` isolates STOP speed switches with active,
+configured-but-untriggered and powered-off APU controls. Use `--runner`,
+`--sameboy-capture`, and a fresh `--output`; optional
+`--case ch1-active-switch-period-28` selects one scenario at both initial CPU
+speeds. The 48-case matrix covers both channels, periods of 16/28 APU clocks,
+switches and single-NOP controls. Each case records 128 PCM12/NR52/KEY1/DIV/
+TIMA/IF observations, preserving separate PCM and timer comparisons. NR52,
+initial/final KEY1, completion and the adjacent WRAM guard validate each log.
+The output retains all differences and returns 1 for disagreement, with
+`qualification=false`; capture errors return 2. Timer and active-channel
+switch differences remain unresolved.
+
+These longer STOP controls use bounded limits of 100 million GBB CPU T-cycles
+and 200 million reference 8-MHz clocks per capture, with the existing 30-second
+child timeout. The shared harness's default limits remain 20/40 million;
+offline tests verify defaults, overrides and invalid-budget rejection before
+output creation. `gameboy_cgb_stop_apu_probe_contract` runs offline. Set
+`GBB_TEST_RUNNER` and `GBB_SAMEBOY_CGB_CAPTURE` for the full native matrix in
+`tests/cgb_stop_apu_probe_tests.py`. Known differences are not required to
+persist; no-switch parity and post-switch channel-start PCM parity are checked.

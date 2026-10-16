@@ -104,7 +104,11 @@ def run_probe(runner, adapter, output, *, scenarios=SCENARIOS, checkpoints=(2, 4
               rom_builder=probe_rom, analyzer=None, compare_pixels=False,
               comparison_key=None, comparison_name=None,
               write_report=True,
+              max_cpu_cycles=20_000_000, max_reference_clocks=40_000_000,
               schema='gbb-cgb-pcm-stat-probe-v1'):
+    if (type(max_cpu_cycles) is not int or type(max_reference_clocks) is not int or
+            max_cpu_cycles <= 0 or max_reference_clocks <= 0):
+        raise ValueError('capture budgets must be positive integer clock counts')
     output.mkdir(parents=True, exist_ok=False)
     boot_data = anchor.owned_boot()
     boot = output / 'owned-cgb-boot.bin'
@@ -131,10 +135,10 @@ def run_probe(runner, adapter, output, *, scenarios=SCENARIOS, checkpoints=(2, 4
                         if emulator == 'gbb':
                             command = [str(runner), str(rom), '--model', 'cgb-e', '--dmg-boot',
                                        '--frame-series', str(frame), str(frame), str(prefix),
-                                       '--frame-state-series', '--max-cycles', '20000000']
+                                       '--frame-state-series', '--max-cycles', str(max_cpu_cycles)]
                         else:
                             command = [str(adapter), str(rom), str(boot), str(frame), str(image),
-                                       'cgb-e', '40000000', str(state)]
+                                       'cgb-e', str(max_reference_clocks), str(state)]
                         report['commands'].append(command)
                         result = subprocess.run(command, capture_output=True, text=True, timeout=30)
                         if result.returncode:

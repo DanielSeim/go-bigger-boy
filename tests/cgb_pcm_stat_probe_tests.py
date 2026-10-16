@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Offline contracts and optional public-Core-API integration for authored probes."""
 import os
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -97,6 +98,50 @@ class ProbeContracts(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'capture failed'):
                     probe.run_probe(executable, executable, output)
             self.assertFalse((output / 'report.json').exists())
+
+    def test_default_and_extended_capture_budgets_reach_both_commands(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            executable = root / 'dummy'
+            executable.write_bytes(b'not invoked')
+            def capture(command, **kwargs):
+                data = bytearray(8192)
+                data[:2] = bytes((64, 1))
+                data[0x200] = 0xa5
+                if '--frame-series' in command:
+                    prefix = command[command.index('--frame-series') + 3]
+                    Path(prefix + '-2.state').write_bytes(data + bytes(160))
+                    metadata = ''
+                else:
+                    Path(command[-1]).write_bytes(data)
+                    metadata = json.dumps(dict(schema='gbb-sameboy-cgb-capture-v1', qualification=False,
+                        completed_ppu_frames=2, model='cgb-e', random_seed=0, color_correction='disabled',
+                        capture_anchor='normal_vblank_including_boot'))
+                return subprocess.CompletedProcess(command, 0, metadata, '')
+            for name, budgets, expected in (
+                    ('defaults', {}, (20_000_000, 40_000_000)),
+                    ('extended', dict(max_cpu_cycles=100_000_000, max_reference_clocks=200_000_000),
+                     (100_000_000, 200_000_000))):
+                with patch.object(probe.subprocess, 'run', side_effect=capture), \
+                        patch.object(probe.anchor, 'read_capture', return_value=dict(rgb_sha256='same')):
+                    report = probe.run_probe(executable, executable, root / name,
+                                             scenarios=('silence',), checkpoints=(2,), **budgets)
+                self.assertTrue(probe.passes(report))
+                self.assertEqual(len(report['commands']), 8)
+                for command in report['commands']:
+                    if '--max-cycles' in command:
+                        self.assertEqual(int(command[command.index('--max-cycles') + 1]), expected[0])
+                    else:
+                        self.assertEqual(int(command[-2]), expected[1])
+
+    def test_invalid_capture_budgets_reject_before_output_creation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / 'results'
+            for key in ('max_cpu_cycles', 'max_reference_clocks'):
+                for value in (0, -1, True, 1.5, '20'):
+                    with self.assertRaisesRegex(ValueError, 'positive integer'):
+                        probe.run_probe(Path('/unused'), Path('/unused'), output, **{key: value})
+                    self.assertFalse(output.exists())
 
 
 @unittest.skipUnless(os.environ.get('GBB_TEST_RUNNER') and os.environ.get('GBB_SAMEBOY_CGB_CAPTURE'),

@@ -689,8 +689,55 @@ check both channels, CGB-E/AGB, muted output and single-cycle/batched warm-up;
 save/load restores before a retrigger with varied clock and duty phases without
 a format change. Before/after hashes, sample differences and case counts are
 recorded in `tests/fixtures/external-reference/cgb-pulse-retrigger.json`.
-Next isolate STOP-transition clocking with active and disabled APU controls
-before extending frequency-write fixes or moving on to envelope glitches.
+The subsequent `scripts/cgb_stop_apu_probe.py` adds active, configured-but-not-
+triggered (`armed`) and powered-off (`off`) APU controls around STOP. Armed
+channels are triggered afterward; off controls enable/configure/trigger the
+APU afterward. Single-NOP controls keep the initial speed and do not perform
+STOP's DIV reset. NOP matches this core's nominal four-T-cycle STOP instruction
+path, without assuming equivalence of transition time or clock effects. Each exact
+program is compared between cores, at both initial CPU speeds, for both channels and pulse
+periods 16 and 28, retaining 12.5% duty and volume 15. The non-power-of-two
+period helps distinguish pulse-phase offsets hidden by the period-16 control.
+
+All 48 cases collect 128 independent PCM12/NR52/KEY1/DIV/TIMA/IF tuples, with
+TIMA seeded to 0x30 and TAC=0x04 (the slow timer). DIV/TIMA/IF reads finish 60/80/100
+CPU T-cycles after PCM. No interrupt is serviced; the LCD remains off until
+the complete C100..C3FF log is frozen, with its adjacent C400 guard intact.
+KEY1 witnesses confirm initial/final speeds and a cleared prepare bit. Switch
+cases restore initial speed before resetting the next experiment. Reports
+separate PCM agreement from DIV/TIMA/IF agreement, masking unused IF high bits.
+
+All 192 captures repeat with valid records and speed witnesses:
+
+| Operation / APU during operation | Cases | PCM matches | Timer matches | Complete matches |
+| --- | --- | --- | --- | --- |
+| NOP, all APU states | 24 | 24 | 24 | 24 |
+| Switch, active | 8 | 0 | 0 | 0 |
+| Switch, armed | 8 | 8 | 0 | 0 |
+| Switch, powered off | 8 | 8 | 0 | 0 |
+
+DIV and low IF trajectories agree in all 48 cases. In every switch case,
+all TIMA observations are 0x30 in GBB and 0xB0 in SameBoy, independently of APU
+state. PCM agrees when the channel starts after the switch. The active-channel
+PCM mismatch is identical across channels; circular alignment on the sample
+grid gives these equivalent shifts of SameBoy relative to GBB:
+
+| Transition | Pulse period | Sample shift | Equivalent APU clocks modulo full pulse cycle |
+| --- | --- | --- | --- |
+| Normal to double | 16 | 4 | 8 modulo 128 |
+| Normal to double | 28 | 68 | 136 modulo 224 |
+| Double to normal | 16 | 1 | 4 modulo 128 |
+| Double to normal | 28 | 9 | 36 modulo 224 |
+
+These are phase equivalences at the post-switch sample resolution, not absolute
+transition durations. The witnesses separate timer-transition accounting from
+already-active channel phase, but do not establish the exact STOP pause or
+which clocks run during it. No CPU/APU timing changes are made in this step.
+The core remains `226742c`; evidence and per-case hashes are in
+`tests/fixtures/external-reference/cgb-stop-apu.json`. Existing harness budgets
+remain unchanged; these longer controls explicitly request larger bounded
+budgets. Next measure instruction-entry/exit time around one speed-switch STOP
+to resolve its duration and clock domains before changing the CPU/APU model.
 
 DIV/APU edges are dispatched at their timer-cycle boundary rather than being
 queued until the end of a bus batch. The APU also models the hardware rule that
