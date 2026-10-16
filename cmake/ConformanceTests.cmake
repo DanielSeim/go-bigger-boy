@@ -35,7 +35,7 @@ function(gbb_add_direct_conformance_test suite rom protocol cycle_limit)
     endif()
 
     get_filename_component(rom_name "${rom}" NAME)
-    string(MAKE_C_IDENTIFIER "${suite}_${rom_name}" test_id)
+    string(MAKE_C_IDENTIFIER "${suite}_${rom_name}_${ARGV4}" test_id)
     set(test_name "conformance_${test_id}")
     set(test_command gameboy_test_runner "${rom}"
                      --max-cycles "${cycle_limit}"
@@ -370,15 +370,27 @@ if(GAMEBOY_SAMESUITE_DIR AND NOT GAMEBOY_ENABLE_EXTERNAL_SUITES)
     endif()
     foreach(rom IN LISTS gbb_samesuite_apu_roms)
         get_filename_component(rom_name "${rom}" NAME)
-        set(model cgb)
-        if(rom_name STREQUAL "div_write_trigger.gb" OR
-           rom_name STREQUAL "div_write_trigger_10.gb")
-            set(model dmg)
-        elseif(rom_name MATCHES "cgb0")
-            set(model cgb0)
+        execute_process(
+            COMMAND "${Python3_EXECUTABLE}"
+                    "${CMAKE_CURRENT_LIST_DIR}/../tests/samesuite_models.py" "${rom_name}"
+            RESULT_VARIABLE model_result OUTPUT_VARIABLE profiles
+            OUTPUT_STRIP_TRAILING_WHITESPACE)
+        if(NOT model_result EQUAL 0 OR profiles STREQUAL "")
+            message(FATAL_ERROR "Could not resolve SameSuite applicability: ${rom_name}")
         endif()
-        gbb_add_direct_conformance_test(
-            samesuite-apu "${rom}" mooneye 15000000 "${model}")
+        foreach(model IN LISTS profiles)
+            if(model MATCHES "^unsupported-")
+                string(MAKE_C_IDENTIFIER "samesuite-apu_${rom_name}_${model}" skip_id)
+                add_test(NAME "conformance_${skip_id}"
+                         COMMAND "${CMAKE_COMMAND}" -E echo
+                                 "UNSUPPORTED ${rom_name}: ${model}; no substitute profile")
+                set_tests_properties("conformance_${skip_id}" PROPERTIES
+                    LABELS "conformance;samesuite-apu" SKIP_REGULAR_EXPRESSION "UNSUPPORTED")
+            else()
+                gbb_add_direct_conformance_test(
+                    samesuite-apu "${rom}" mooneye 15000000 "${model}")
+            endif()
+        endforeach()
     endforeach()
 endif()
 

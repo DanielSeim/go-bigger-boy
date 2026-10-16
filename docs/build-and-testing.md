@@ -671,3 +671,44 @@ GBB_BULLYGB_ROM_DIR=/external/test-roms/bullygb \
 
 The test requires the exact pinned ROM hash and checks all five supported
 aggregate passes while retaining the independently observed CGB0 mismatch.
+
+### SameSuite APU applicability
+
+`tests/samesuite_models.py` is shared by the external report and legacy direct
+CTest registration. Model selection follows explicit filename suffixes:
+
+| Filename suffix | Runnable profiles | Unsupported revisions retained |
+| --- | --- | --- |
+| `-cgb0` | CGB0 | None |
+| `-cgb0B` | CGB0 | CGB-B |
+| `-cgb0BC` | CGB0, CGB-C | CGB-B |
+| `-cgbBCE` | CGB-C, CGB-E | CGB-B |
+| `-cgbDE` | CGB-E | CGB-D |
+| `-cgbB` | None | CGB-B |
+| `-A` | AGB | None |
+
+Untagged digital APU tests retain the CGB-E research profile. The two
+`div_write_trigger`/`div_write_trigger_10` ROMs retain DMG. Unknown explicit
+suffixes are reported unsupported. No unsupported revision is substituted with
+a nearby CGB revision. The AGB entry uses the existing AGB startup profile and
+remains research evidence, not a claim of validated AGB APU silicon behavior.
+The revision distinction is documented in
+[upstream's CH3 length test](https://github.com/LIJI32/SameSuite/blob/f15645fb049a47ea235f6d2c9a033e72d8087901/apu/channel_3/channel_3_extra_length_clocking-cgb0.asm).
+
+For mixed labels the supported members run and each unsupported member gets
+its own visible row. In the report those rows have status `unsupported`; direct
+CTest emits an explicit unsupported message and records the test as skipped.
+Direct test names include the model to keep multi-profile registrations unique.
+SGB informational cases and non-APU research selection are unchanged.
+
+On pinned bundle v7.0, the revised report contains 36 passes, 40 failures, six
+unsupported revisions and two informational entries. Direct registration selects
+70 runnable APU cases and six explicit skips. The four fewer failures follow
+selection changes; all 76 common case IDs/profiles retain their previous result.
+No emulator/APU timing changed in this step.
+
+`tests/external_suite_tests.py` covers exact/mixed revision selection, unknown
+suffixes, unsupported non-execution, and the CMake resolver CLI. A small authored
+CMake fixture compares actual direct registrations with report discovery,
+including paths with spaces, multi-profile names and explicit skip properties.
+It requires no upstream ROM, compiler, build or network access.

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Correct SameSuite APU revision selection in both external reports and direct
+  CTest registration; retain unsupported revisions explicitly instead of
+  substituting CGB-E/CGB-C, and route AGB-specific tests to the AGB profile.
+
 - Record a before/after regression comparison for the BullyGB fixes: all 168
   conformance cases pass, all 166 AGE/SameSuite statuses are unchanged, and
   all 17 AGE captures are byte-identical; preserve build and input provenance.

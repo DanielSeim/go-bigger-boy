@@ -110,11 +110,23 @@ Use distinct build and result directories for the two commits. Compare case IDs
 and profiles as well as totals; comparing totals alone can hide a new failure
 balanced by an unrelated improvement.
 
-Before using SameSuite failures to guide further audio fixes, correct the
-APU model filtering: the current fallback runs some `-cgb0`, `-cgbB` and `-A`
-ROMs on CGB-E. Those labels identify specific revisions/families and cannot
-support a CGB-E accuracy verdict. Unsupported revisions should remain visible
-without being silently mapped to another model.
+The follow-up APU model-filter correction now uses one resolver for both the
+metadata report and direct SameSuite CTest registration. Explicit suffixes map
+only to their named hardware: CGB0, CGB-C, CGB-E and AGB. CGB-A/B/D have no
+implemented profile and remain visible as unsupported entries, including the
+unsupported members of a mixed revision label. Unknown explicit suffixes are
+also unsupported. Untagged digital-APU tests retain the CGB-E research default;
+the two pre-CGB DIV-trigger tests retain DMG.
+
+On the same pinned bundle and unchanged emulator core, the corrected report is
+**36 pass, 40 fail, six unsupported and two informational**. All 76 shared case
+IDs/profiles retain their previous status. Six wrongly selected model rows are
+removed, two correctly selected rows are added, and six unsupported revision
+rows become visible. Thus the lower failure count reflects applicability, not
+an APU accuracy improvement. Direct CTest registration agrees on all 70 runnable
+APU profiles and six unsupported rows; unsupported direct tests are marked
+skipped explicitly. Remaining applicable APU failures still fail their diagnostic
+tests, and research release-gate policy is unchanged.
 
 ### Additional pinned-bundle suites
 
@@ -142,8 +154,8 @@ runner rather than the per-model matrix. AGE cases with reference PNGs are
 captured at the runner's `LD B,B` completion point and compared with the
 upstream image, including the documented non-CGB compatibility palette. AGE
 machine cases use the Mooneye-compatible Fibonacci result registers. SameSuite
-APU cases select DMG, CGB0, CGB-C, or CGB-E from the upstream filename and
-documentation; DMA, interrupt, and PPU cases use the broad CGB-E research
+APU cases select DMG, CGB0, CGB-C, CGB-E or AGB from the upstream filename
+and documentation, with unsupported revisions retained explicitly; DMA, interrupt, and PPU cases use the broad CGB-E research
 profile until revision coverage is documented. SGB probes are retained as
 informational cases because they expose commands rather than the Fibonacci
 result ABI. Research failures remain visible in `external-suite-report.md` but
@@ -469,8 +481,9 @@ ctest --test-dir build-conformance -L samesuite-apu --output-on-failure
 ```
 
 The runner uses SameSuite's Mooneye-compatible result registers and selects DMG
-for its two pre-CGB DIV-trigger ROMs, CGB0 for explicitly tagged CGB0 cases,
-and CGB for the remaining CGB tests. This suite is diagnostic until its
+for its two pre-CGB DIV-trigger ROMs, exact supported revisions for explicit
+CGB tags, AGB for `-A`, and CGB-E for untagged digital APU tests. Unsupported
+CGB-A/B/D tags are visible as skipped direct tests or unsupported report rows. This suite is diagnostic until its
 revision-specific failures are resolved; it is not included in the release
 gate by default.
 

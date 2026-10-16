@@ -7,6 +7,7 @@ import importlib.util
 import json
 import hashlib
 import os
+import shutil
 import subprocess
 from unittest.mock import patch
 from pathlib import Path
@@ -15,6 +16,7 @@ import tempfile
 import unittest
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 SCRIPT = Path(__file__).with_name("run_external_suites.py")
 SPEC = importlib.util.spec_from_file_location("run_external_suites", SCRIPT)
 assert SPEC and SPEC.loader
@@ -87,6 +89,85 @@ class ExternalSuiteDiscoveryTests(unittest.TestCase):
                 {("cgb-c", False), ("cgb-e", False),
                  ("cgb-c", True), ("cgb-e", True)},
             )
+
+    def test_samesuite_revision_mapping_is_exact(self):
+        expected = {
+            'clock-cgb0.gb': (['cgb0'], []),
+            'clock-cgbB.gb': ([], ['cgb-b']),
+            'clock-cgb0B.gb': (['cgb0'], ['cgb-b']),
+            'clock-cgb0BC.gb': (['cgb0', 'cgb-c'], ['cgb-b']),
+            'clock-cgbBCE.gb': (['cgb-c', 'cgb-e'], ['cgb-b']),
+            'clock-cgbDE.gb': (['cgb-e'], ['cgb-d']),
+            'clock-cgbE.gb': (['cgb-e'], []),
+            'clock-A.gb': (['agb'], []),
+            'clock-future.gb': ([], ['unknown-future']),
+            'div_write_trigger.gb': (['dmg'], []),
+            'clock.gb': (['cgb-e'], []),
+        }
+        for name, (models, unsupported) in expected.items():
+            with self.subTest(name=name):
+                result = MODULE.samesuite_coverage(name)
+                self.assertEqual(list(result.models), models)
+                self.assertEqual(list(result.unsupported), unsupported)
+                self.assertEqual(MODULE.samesuite_apu_models(name), models)
+                cli = subprocess.run([sys.executable, str(Path(__file__).with_name('samesuite_models.py')), name],
+                                     capture_output=True, text=True, check=True)
+                self.assertEqual(cli.stdout.strip(), ';'.join((*models,
+                    *('unsupported-' + r for r in unsupported))))
+
+
+    def test_samesuite_unsupported_revisions_stay_visible(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'apu').mkdir()
+            for name in ('clock-cgb0B.gb', 'clock-cgbB.gb', 'clock-A.gb'):
+                (root / 'apu' / name).write_bytes(b'fixture')
+            cases = MODULE.samesuite_cases(root, MANIFEST['suites']['same-suite'])
+            self.assertEqual({c.model for c in cases if c.status == 'pending'}, {'cgb0', 'agb'})
+            unsupported = [c for c in cases if c.status == 'unsupported']
+            self.assertEqual(len(unsupported), 2)
+            for case in unsupported:
+                with patch.object(MODULE.subprocess, 'run') as run:
+                    self.assertEqual(MODULE.run_case(case, Path('/unused'), root), case)
+                    run.assert_not_called()
+
+    @unittest.skipUnless(shutil.which('cmake') and shutil.which('ctest'), 'requires CMake/CTest')
+    def test_direct_ctest_and_report_select_identical_apu_profiles(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            suite = root / 'suite with spaces'
+            (suite / 'apu').mkdir(parents=True)
+            for name in ('clock-cgb0B.gb', 'clock-cgb0BC.gb', 'clock-cgbB.gb',
+                         'clock-cgbDE.gb', 'clock-A.gb', 'clock-future.gb', 'clock.gb'):
+                (suite / 'apu' / name).write_bytes(b'fixture')
+            source = root / 'source'
+            source.mkdir()
+            cmake = Path(__file__).resolve().parents[1] / 'cmake/ConformanceTests.cmake'
+            (source / 'CMakeLists.txt').write_text(
+                'cmake_minimum_required(VERSION 3.20)\nproject(models NONE)\nenable_testing()\n'
+                f'set(Python3_EXECUTABLE [==[{Path(sys.executable).as_posix()}]==])\n'
+                f'set(GAMEBOY_SAMESUITE_DIR [==[{suite.as_posix()}]==])\n'
+                'add_executable(gameboy_test_runner IMPORTED GLOBAL)\n'
+                f'set_target_properties(gameboy_test_runner PROPERTIES IMPORTED_LOCATION '
+                f'[==[{Path(sys.executable).as_posix()}]==])\n'
+                f'include([==[{cmake.as_posix()}]==])\n')
+            subprocess.run(['cmake', '-S', str(source), '-B', str(root / 'build')],
+                           capture_output=True, text=True, check=True, timeout=60)
+            output = subprocess.check_output(['ctest', '--test-dir', str(root / 'build'),
+                '--show-only=json-v1', '-C', 'Release'], text=True, timeout=30)
+            tests = json.loads(output)['tests']
+            cases = MODULE.samesuite_cases(suite, MANIFEST['suites']['same-suite'])
+            expected = {(str(c.rom.resolve()), c.model) for c in cases if c.status == 'pending'}
+            running = [t for t in tests if '--model' in t.get('command', [])]
+            actual = {(str(Path(t['command'][1]).resolve()),
+                       t['command'][t['command'].index('--model') + 1]) for t in running}
+            self.assertEqual(expected, actual)
+            self.assertEqual(len(running), len(expected))
+            skipped = [t for t in tests if t not in running]
+            self.assertEqual(len(skipped), sum(c.status == 'unsupported' for c in cases))
+            self.assertTrue(all(any(p['name'] == 'SKIP_REGULAR_EXPRESSION' and
+                p['value'] == ['UNSUPPORTED'] for p in t['properties']) for t in skipped))
+            self.assertEqual(len({t['name'] for t in tests}), len(tests))
 
     def test_samesuite_classifies_sgb_as_informational(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

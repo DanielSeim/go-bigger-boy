@@ -22,6 +22,8 @@ import subprocess
 import sys
 from typing import Iterable, List, Optional, Sequence, Tuple
 
+from samesuite_models import coverage as samesuite_coverage
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -143,16 +145,7 @@ def age_cases(root: Path, config: dict) -> List[Case]:
 
 
 def samesuite_apu_models(name: str) -> List[str]:
-    lower = name.casefold()
-    if lower in {"div_write_trigger.gb", "div_write_trigger_10.gb"}:
-        return ["dmg"]
-    if "cgb0b" in lower or "cgb0bc" in lower:
-        return ["cgb0", "cgb-c"]
-    if "cgbbce" in lower:
-        return ["cgb-c", "cgb-e"]
-    if "cgbde" in lower or "cgbe" in lower:
-        return ["cgb-e"]
-    return ["cgb-e"]
+    return list(samesuite_coverage(name).models)
 
 
 def samesuite_cases(root: Path, config: dict) -> List[Case]:
@@ -170,7 +163,13 @@ def samesuite_cases(root: Path, config: dict) -> List[Case]:
                 "info", "SGB command probe is informational-only"))
             continue
         if category == "apu":
-            models = samesuite_apu_models(rom.name)
+            applicability = samesuite_coverage(rom.name)
+            models = list(applicability.models)
+            for revision in applicability.unsupported:
+                cases.append(Case(
+                    "same-suite", safe_id(f"{relative}-unsupported-{revision}"), rom,
+                    None, None, False, "machine", config["max_cycles"], config["gate"],
+                    "unsupported", f"{revision.upper()} has no supported profile; no substitute is run"))
         elif category in {"dma", "interrupt", "ppu"}:
             # The upstream bundle does not document revision applicability for
             # non-APU cases. CGB-E is the broadest represented profile and the
