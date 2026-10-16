@@ -428,6 +428,9 @@ If Emscripten and SDL3 are already installed, activate Emscripten, set
 The `Web build and Pages` workflow builds on pushes to `main`, `v*` tags,
 pull requests, and manual dispatch. It runs browser and visual gates and
 uploads artifacts; only non-PR runs on `refs/heads/main` deploy to GitHub Pages.
-Tag builds supply the Web release artifact without deploying Pages.
+Tag builds supply `go-bigger-boy-web.zip` as the Web release asset without
+deploying Pages. The ZIP contains the complete site with `index.html` at its root
+and preserves asset subdirectories. Extract it and serve the directory over HTTP
+(for example, `python3 -m http.server 8765`); open `http://localhost:8765/`.
 The repository's Pages source must be set to **GitHub
 Actions** before the first deployment.

@@ -67,9 +67,10 @@ require_archive_member "$android_apk" AndroidManifest.xml
 require_archive_member "$android_aab" base/manifest/AndroidManifest.xml
 
 echo "Checking Web release assets..."
-require_asset index.html >/dev/null
-require_asset index.js >/dev/null
-require_asset index.wasm >/dev/null
-require_asset go_bigger_boy_logo.png >/dev/null
+web_archive="$(require_asset go-bigger-boy-web.zip)"
+unzip -tq "$web_archive" >/dev/null
+for member in index.html index.js index.wasm go_bigger_boy_icon.png go_bigger_boy_logo.png; do
+    require_archive_member "$web_archive" "$member"
+done
 
 echo "Release asset preflight passed."

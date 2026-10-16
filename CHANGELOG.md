@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Package the downloadable Web release as `go-bigger-boy-web.zip`, including
+  all site files and assets; retain the existing GitHub Pages deployment.
+
 - Decompose SGB first-selection startup and add age-calibrated fixture scheduling
   with independent pre-request playback witnesses; preserve existing compatibility
   failures and report unaligned timing comparisons as inconclusive.

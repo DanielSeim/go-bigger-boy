@@ -56,7 +56,8 @@ below are release actions to perform deliberately, not part of a docs audit.
       `gbb-updater.exe`, `SDL3.dll`, and `settings.ini`; Linux AppImage must
       return `Go Bigger Boy x.y.z` with `--version`; both macOS arm64/x64
       archives must contain the app executable. Check signed APK/AAB and
-      Web `index.html`, `index.js`, `index.wasm`, and logo. The preflight
+      Web `go-bigger-boy-web.zip` containing `index.html`, `index.js`,
+      `index.wasm`, icon and logo at its root. The preflight
       checks presence/archive structure and runs the Linux version command;
       it does not verify all platform signatures or interactive behavior.
 - [ ] Perform the applicable frontend/save/update smoke checks on available
@@ -121,8 +122,8 @@ assuming a transport handshake proves a trade or battle completed.
       (`--clobber`); review the target and packages before recovery.
 - [ ] Verify the published GitHub Release contains the Windows x64 ZIP,
       Linux x64 AppImage, macOS arm64 and x64 archives, signed Android APK/AAB,
-      and Web files. Confirm versions and updater-visible asset names/digests
-      agree with the release. Verify the description contains the complete
+      and the single Web ZIP. Confirm versions and updater-visible asset
+      names/digests agree with the release. Verify the description contains the complete
       matching `CHANGELOG.md` entry from the validated source, preserving its
       Markdown. Publication and retries set the description from that entry;
       missing, empty or duplicate entries stop publication. Announce only after
