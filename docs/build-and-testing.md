@@ -312,6 +312,12 @@ The report is written to `external-suite-report.md`. Research failures are
 reported for review but do not fail unless a suite entry is explicitly
 promoted to the `required` gate.
 
+GBVisualizer is documented as an [external CGB reference candidate](gbvisualizer-reference.md)
+for PCM12/PCM34, double-speed, timer and scanline integration. It is not yet a
+registered gate or bundled test ROM; the guide records provenance and SameBoy
+capture requirements, including the distinction between CPU-cycle and PPU-frame
+checkpoints at double speed.
+
 ## Hardware-model matrix
 
 To generate the hardware-revision matrix report, add
