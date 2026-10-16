@@ -38,6 +38,43 @@ gameboy::CpuRegisters initial_registers() {
     };
 }
 
+void test_cgb_timer_clock_during_interrupt_entry() {
+    for (const auto model : {gameboy::HardwareModel::cgb0,
+                             gameboy::HardwareModel::cgb_c,
+                             gameboy::HardwareModel::cgb_e,
+                             gameboy::HardwareModel::agb}) {
+        for (const bool double_speed : {false, true}) for (const auto request : {4, 6}) {
+            gameboy::MemoryBus bus{gameboy::Cartridge{test_rom(double_speed
+                ? std::vector<std::uint8_t>{0x10, 0x00, 0xFB, 0x00}
+                : std::vector<std::uint8_t>{0xFB, 0x00})}};
+            bus.initialize_post_boot(model);
+            gameboy::Cpu cpu;
+            cpu.load_registers(initial_registers());
+            if (double_speed) {
+                bus.write8(0xFF4D, 1);
+                check(cpu.step(bus) == 4 && (bus.read8(0xFF4D) & 0x80) != 0,
+                      "CGB timer-entry setup switches speed through STOP");
+            }
+            bus.write8(0xFF07, 0);
+            bus.write8(0xFF04, 0);
+            bus.write8(0xFF05, 0);
+            bus.write8(0xFF07, 5); // One increment per 16 CPU T-cycles.
+            bus.write8(0xFFFF, static_cast<std::uint8_t>(request));
+            bus.write8(0xFF0F, static_cast<std::uint8_t>(request)); // Software only; no overflow.
+            check(cpu.step(bus) == 4 && cpu.step(bus) == 4,
+                  "EI/NOP setup consumes eight CPU T-cycles");
+            bus.tick(4); // Divider at 12: twenty entry cycles must cross 16 and 32.
+            check(bus.read8(0xFF05) == 0, "CGB timer starts before its first falling edge");
+            check(cpu.step(bus) == 20 && cpu.registers().pc == (request == 4 ? 0x0050 : 0x0048),
+                  "CGB software request enters the highest-priority vector in twenty cycles");
+            check((bus.read8(0xFF0F) & 6) == (request == 4 ? 0 : 4),
+                  "CGB entry acknowledges only the serviced source when timer is pending");
+            check(bus.read8(0xFF05) == 2,
+                  "CGB timer advances through all twenty interrupt-entry CPU cycles");
+        }
+    }
+}
+
 void test_sixteen_bit_operations() {
     struct PairLoadCase {
         std::uint8_t opcode;
@@ -661,6 +698,7 @@ void test_base_opcode_completeness() {
 } // namespace
 
 int main() {
+    test_cgb_timer_clock_during_interrupt_entry();
     test_sixteen_bit_operations();
     test_special_loads_and_decimal_adjust();
     test_addressed_loads();

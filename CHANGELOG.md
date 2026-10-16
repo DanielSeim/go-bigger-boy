@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Clock the CGB timer through all 20 interrupt-entry cycles, including a pending
+  timer alongside higher-priority STAT; retain the DMG boundary exception. Add
+  software-requested phase sweeps, RETI/RET/EI controls and a direct-call baseline.
+
 - Add short authored CGB IRQ timing logs with isolated/mixed interrupts,
   equal-cost scrolling controls and IME-disabled STAT polling; retain observed
   reference differences without changing emulator timing.

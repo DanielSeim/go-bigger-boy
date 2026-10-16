@@ -398,10 +398,85 @@ GBB_SAMEBOY_CGB_CAPTURE=/external/sameboy-cgb-capture \
   python3 tests/cgb_irq_timing_probe_tests.py
 ```
 
-Next isolate dispatch of an already-pending timer request immediately after STAT
-`RETI` at normal speed with a controlled software-request timing probe. Investigate
-double-speed LY/STAT boundaries separately. Establish an independent timing
-contract before changing emulator behavior.
+The software-request controls below isolate dispatch across `RETI`; the measurements
+above describe the pre-correction behavior, not a required mismatch baseline.
+
+## Software requests and the CGB timer-entry correction
+
+`scripts/cgb_reti_dispatch_probe.py` removes hardware STAT assertion and timer
+overflow from the dispatch test. It sets requests through IF and uses TIMA as a
+stopwatch. Six controls cover a direct call, timer-only interrupt, already-pending
+timer after STAT `RETI`, timer raised inside STAT, `EI; RET`, and plain `RET` followed
+by re-enabling interrupts in main. Four NOP phases sweep the timer's 16-T-cycle
+period in 4-T-cycle steps at both CPU speeds: 48 paired cases, 192 captures.
+
+```sh
+python3 scripts/cgb_reti_dispatch_probe.py \
+  --runner ./build/gbb_test_runner \
+  --sameboy-capture /external/sameboy-cgb-capture \
+  --output /external/cgb-reti-dispatch-results
+```
+
+Use the same pinned library/adapter and newly built runner as above. Each ROM
+records one or two tuples containing source, TIMA, acknowledged IF and a main-code
+marker, then disables the timer and interrupts. The marker validates dispatch
+order: a pending request after `RETI` runs before main changes it; after plain
+`RET`, it runs only after main changes the marker and re-enables IME. Guard and
+completion checks catch partial logs. Reports include the first event difference,
+provenance and authored timing relations; the completed report is written only
+after those relations have been computed.
+
+The controls also check independent instruction-cost relationships:
+
+- Plain `RET` plus main's marker write and `EI/NOP` adds 32 CPU T-cycles over
+  `RETI`, or two timer ticks at every phase.
+- `EI; RET` adds 4 CPU T-cycles, visible as one extra tick in one of four phases.
+- Five NOPs plus CALL cost 44 T-cycles, matching `EI/NOP`, 20-cycle interrupt
+  entry and the vector JP. Their first observations should therefore agree.
+
+Before correction, both emulators passed the dispatch-order and RET/EI relative
+timing controls, but only 26 of 48 paired cases matched. The direct-call control
+matched across emulators at every phase. GBB's timer-only IRQ observation at
+phase 0 read TIMA=6, while its equal-cost call and SameBoy both read 7. This
+localized a discrepancy before `RETI`, rather than establishing a RETI bug.
+
+Inspection found `Cpu::service_interrupt` applying a DMG timer-boundary exception
+to CGB: one 4-cycle entry step advanced other peripherals but skipped the timer.
+The condition also affected higher-priority STAT entry when a timer request was
+pending. CGB now clocks the timer during all 20 entry cycles; the existing DMG
+exception remains unchanged. A focused CPU contract failed before the correction
+at all eight tested model/speed combinations. It now checks both timer-only and
+mixed-priority requests across CGB0, CGB-C, CGB-E and AGB profiles at both speeds.
+The timer-overflow contract separately checks CGB's falling edge and four-cycle
+reload delay while preserving the DMG fixture boundary.
+
+After correction, all **48 paired software-request cases match**, all authored
+timing relations pass, and captures repeat exactly. Results are identical between
+normal and double speed within each emulator. The tool returns 0 for this sweep,
+while retaining `qualification=false`: this focused result is not a hardware
+qualification of the whole emulator. Offline CTest registers
+`gameboy_cgb_reti_dispatch_probe_contract`; optional native validation is:
+
+```sh
+GBB_TEST_RUNNER=./build/gbb_test_runner \
+GBB_SAMEBOY_CGB_CAPTURE=/external/sameboy-cgb-capture \
+  python3 tests/cgb_reti_dispatch_probe_tests.py
+```
+
+The combined timer/STAT/VBlank sweep improves from 0/24 to **12/24 matching
+checkpoints**, but remaining PCM and pixel differences stay explicit failures.
+The short mixed IRQ logs still differ: after correction, the first normal-speed
+mixed-short difference moves from event 1 to event 20, a STAT observation at LY=11
+with TIMA=248 versus 247. At double speed its first difference is event 7, a STAT
+observation at LY=3 with TIMA=0 versus 255. These are remaining timing boundaries,
+not evidence that the software-request correction failed its independent controls.
+The external GBVisualizer capture still differs at frames 60, 300 and 600:
+2,474, 3,042 and 3,459 pixels respectively in the local post-correction run.
+Visual agreement did not improve uniformly; it was not used to select this fix.
+No external assets or newly accepted golden screenshots are committed.
+
+Next trace the timer-overflow/reload and STAT-service boundary at the first remaining
+divergence, keeping double-speed LY/STAT behavior as a separate question.
 
 Keep three results separate: GBB's own deterministic screenshot regression,
 GBB-versus-SameBoy frame/PCM behavior, and audio waveform comparison. In

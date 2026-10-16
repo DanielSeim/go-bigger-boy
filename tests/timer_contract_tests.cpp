@@ -125,7 +125,8 @@ void test_normal_timer_interrupt_vector_boundary() {
     // The timer_if fixture reaches the normal timer vector with the timer
     // input high and its falling edge exactly in the final four cycles of
     // interrupt entry. Those CPU-visible cycles must still advance the other
-    // peripherals, but must not advance the timer itself.
+    // peripherals. Preserve the DMG fixture boundary, while CGB must clock
+    // the falling edge and begin its normal four-cycle overflow reload delay.
     for (const auto model : gameboy::concrete_hardware_models) {
         gameboy::MemoryBus bus{
             gameboy::Cartridge{test_rom({0xFB, 0x00})}};
@@ -148,9 +149,15 @@ void test_normal_timer_interrupt_vector_boundary() {
 
         check(cpu.step(bus) == 20 && cpu.registers().pc == 0x0050,
               "normal timer interrupt dispatch keeps its twenty-cycle contract");
-        check(bus.read8(0xFF05) == 0xFF &&
+        const bool cgb = gameboy::is_cgb_hardware(model);
+        check(bus.read8(0xFF05) == (cgb ? 0 : 0xFF) &&
                   (bus.read8(0xFF0F) & 0x04) == 0,
-              "normal timer vector entry does not advance TIMA on its final cycle");
+              "timer vector boundary preserves DMG behavior and clocks CGB overflow");
+        if (cgb) {
+            bus.tick(4);
+            check(bus.read8(0xFF05) == 0xFE && (bus.read8(0xFF0F) & 4) != 0,
+                  "CGB vector-entry overflow reloads and requests the next interrupt four cycles later");
+        }
     }
 }
 

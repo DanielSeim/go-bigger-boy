@@ -103,6 +103,7 @@ def samples(data, scenario):
 def run_probe(runner, adapter, output, *, scenarios=SCENARIOS, checkpoints=(2, 4),
               rom_builder=probe_rom, analyzer=None, compare_pixels=False,
               comparison_key=None, comparison_name=None,
+              write_report=True,
               schema='gbb-cgb-pcm-stat-probe-v1'):
     output.mkdir(parents=True, exist_ok=False)
     boot_data = anchor.owned_boot()
@@ -199,7 +200,8 @@ def run_probe(runner, adapter, output, *, scenarios=SCENARIOS, checkpoints=(2, 4
                         i = row['different_event_indices'][0]
                         row['first_event_difference'] = dict(index=i, gbb=a[i], sameboy=b[i])
                 report['rows'].append(row)
-    (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
+    if write_report:
+        (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     return report
 
 

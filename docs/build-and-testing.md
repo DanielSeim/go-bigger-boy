@@ -333,6 +333,10 @@ reference parity. See the guide for the first timer-phase divergence.
 matched-cost SCX controls and IME-disabled STAT polling. Its measured normal-speed
 pending-timer distinction and separate double-speed observations remain research
 findings, documented in the same guide.
+`gameboy_cgb_reti_dispatch_probe_contract` adds software-requested RETI/RET/EI
+phase sweeps and an equal-cost direct-call control. These exposed and verify a
+CGB timer-entry clock correction; the guide distinguishes the now-matching
+software dispatch cases from remaining combined and demo differences.
 
 ## Hardware-model matrix
 

@@ -787,6 +787,9 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_cgb_irq_timing_probe_contract
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_irq_timing_probe_tests.py)
+        add_test(NAME gameboy_cgb_reti_dispatch_probe_contract
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_reti_dispatch_probe_tests.py)
         add_test(NAME gameboy_external_suite_harness
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/external_suite_tests.py)
