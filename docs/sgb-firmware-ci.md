@@ -305,3 +305,21 @@ repeated-publication ambiguity, strict corpus scope and sanitized failures. The
 optional `gameboy_sgb_vendor_delayed_tempo_local_reference` captures 96 original
 coordinates with timeout 2400 and labels `local;private-reference`. Existing
 publication and selection-wait matrices retain their prior budgets and coverage.
+
+The [direct publication/retry gate](sgb-vendor-publication-retry.md) adds
+`gameboy_sgb_score_vendor_publication_retry` (timeout 900 seconds, cost 450),
+bringing public discovery to 99 matrices. It runs 32 owned baseline/holdout
+captures, eight observer-transparency pairs and eight native/scalar reset/save-
+load pairs. Four short methods in `gameboy_sgb_vendor_publication_retry_contract`
+validate frozen retry anchors, disjoint authored holdouts, paired fixture identity,
+separate wait/profile/state results and CLI exits 0/1/2. The optional
+`gameboy_sgb_vendor_publication_retry_local_reference` runs 64 original/replacement
+captures with timeout 1800 and labels `local;private-reference`. Its gate must
+report existing wait mismatches as failures, rather than treating known handoff
+differences or different preceding score states as proof of compatibility.
+
+Local evidence for this gate is currently negative: seven of 32 paired waits
+differ by about 12 ms, all with different prior score states, while the eight
+frozen SGB2 retry anchors pass. The optional private CTest therefore returns
+failure (exit 1, complete report); public owned matrices and short contracts
+remain passing. Do not mark this private gate `WILL_FAIL` or waive its comparisons.

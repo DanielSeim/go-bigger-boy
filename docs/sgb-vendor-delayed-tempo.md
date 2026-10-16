@@ -123,9 +123,8 @@ native/scalar reset/save-load playback pairs, retaining in-flight wait and unrea
 buffer restoration. The optional local original gate stays separate from public
 CI. Tests are evidence for this bounded observation contract, not sound equivalence.
 
-The next target is a paired behavioral gate for the first unreplied publication
-and retry: preserve both candidate writes and their reply intervals, compare
-original and replacement at the four crossing schedules, and add separate
-nearby holdout schedules before changing acceptance or timing behavior. This is
-a specific remaining handoff question, rather than evidence for another fitted
-wait-table entry.
+The [direct publication/retry gate](sgb-vendor-publication-retry.md) now
+compares both images at the four crossing schedules and separate nearby authored
+holdouts, retaining all publications and reply intervals. It reports wait-time
+mismatches and different preceding score states explicitly, rather than
+inferring a fitted wait-table entry or handoff equivalence from a timing match.

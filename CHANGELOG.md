@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add a direct SGB original/replacement publication-and-retry gate with new
+  holdout schedules, explicit handoff differences and prior-playback-state
+  diagnostics; report wait mismatches without qualifying timing parity.
+
 - Add delayed SGB tempo-boundary comparisons with fixed authored operand addresses,
   paired first-publication evidence and regression checks that preserve ambiguous
   handoffs; keep replacement firmware timing unchanged pending acceptance evidence.
