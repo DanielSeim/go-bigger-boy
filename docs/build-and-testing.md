@@ -518,6 +518,14 @@ The capture file is written on pass, failure, or timeout. Replay advances the
 bus using the recorded cycle positions and stops at the first state or command
 checkpoint mismatch; see [SGB trace and replay](sgb-traces.md).
 
+The opt-in Mooneye comparison also offers `--suite interrupt-div` for ten pinned
+CGB-applicable interrupt/DIV tests; the timer suite remains the default. See
+[the reference workflow](gbvisualizer-reference.md) for external checkout pins,
+commands and the limits of these conformance results. The authored
+`gameboy_cgb_irq_div_probe_contract` checks first-vector DIV witnesses without
+external tools. Set `GBB_TEST_RUNNER` and `GBB_SAMEBOY_CGB_CAPTURE` when running
+`tests/cgb_irq_div_probe_tests.py` to enable the native 96-pair comparison.
+
 Compare captures from two builds or devices without rerunning the ROM:
 
 ```sh

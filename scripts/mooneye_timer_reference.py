@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Build pinned external Mooneye timer tests and compare explicit result protocols."""
+"""Build pinned external Mooneye timer or interrupt/DIV tests and compare explicit result protocols."""
 import argparse
 import hashlib
 import json
@@ -10,6 +10,7 @@ import subprocess
 import cgb_frame_anchor_probe as anchor
 
 PIN = Path(__file__).resolve().parents[1] / 'tests/fixtures/external-reference/mooneye-timer.json'
+SUITES = {'timer': PIN, 'interrupt-div': PIN.with_name('mooneye-interrupt-div.json')}
 MODELS = ('cgb0', 'cgb-c', 'cgb-e')
 
 
@@ -38,8 +39,8 @@ def passed(emulator, result, model):
     return isinstance(data, dict) and all(data.get(k) == v for k, v in required.items())
 
 
-def run_reference(source, assembler_source, assembler_build, runner, adapter, output):
-    pin = json.loads(PIN.read_text())
+def run_reference(source, assembler_source, assembler_build, runner, adapter, output, suite='timer'):
+    pin = json.loads(SUITES[suite].read_text())
     checkout(source, pin['commit'])
     checkout(assembler_source, pin['assembler_commit'])
     if any(output == path or path in output.parents for path in (source, assembler_source)):
@@ -60,7 +61,7 @@ def run_reference(source, assembler_source, assembler_build, runner, adapter, ou
     build(['cmake', '--build', str(assembler_build), '--target', 'wla-gb', 'wlalink', '-j2'])
     wla = assembler_build / 'binaries/wla-gb'
     link = assembler_build / 'binaries/wlalink'
-    roms = {name: output / 'roms/acceptance/timer' / (name + '.gb') for name in pin['tests']}
+    roms = {name: output / 'roms/acceptance' / pin.get('acceptance_directory', 'timer') / (name + '.gb') for name in pin['tests']}
     build(['make', '-C', str(source), 'BUILD_PATH=' + str(output / 'roms'),
            'WLA=' + str(wla), 'WLALINK=' + str(link), *map(str, roms.values())])
     for name, rom in roms.items():
@@ -70,7 +71,7 @@ def run_reference(source, assembler_source, assembler_build, runner, adapter, ou
     for model in MODELS:
         boots[model] = output / ('owned-' + model + '-boot.bin')
         boots[model].write_bytes(anchor.owned_boot(model))
-    report = dict(schema='gbb-mooneye-timer-reference-v1', qualification=False, pin=pin,
+    report = dict(schema=f'gbb-mooneye-{suite}-reference-v1', suite=suite, qualification=False, pin=pin,
                   tools=dict(wla_sha256=digest(wla), wlalink_sha256=digest(link)),
                   boot_sha256={model: digest(boot) for model, boot in boots.items()},
                   runner_sha256=digest(runner), adapter_sha256=digest(adapter),
@@ -96,7 +97,8 @@ def run_reference(source, assembler_source, assembler_build, runner, adapter, ou
 
 def passes(report):
     try:
-        expected = {(model, name) for model in MODELS for name in json.loads(PIN.read_text())['tests']}
+        suite = report.get('suite', 'timer')
+        expected = {(model, name) for model in MODELS for name in json.loads(SUITES[suite].read_text())['tests']}
         rows = report['rows']
         return len(rows) == len(expected) and {(r['model'], r['test']) for r in rows} == expected and all(
             set(row['captures']) == {'gbb', 'sameboy'} and all(c['passed'] is True and c['repeatable'] is True
@@ -107,6 +109,7 @@ def passes(report):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--suite', choices=tuple(SUITES), default='timer')
     parser.add_argument('--source', type=Path, required=True)
     parser.add_argument('--assembler-source', type=Path, required=True)
     parser.add_argument('--assembler-build', type=Path)
@@ -117,11 +120,11 @@ def main():
     try:
         report = run_reference(args.source.resolve(), args.assembler_source.resolve(),
             args.assembler_build.resolve() if args.assembler_build else None,
-            args.runner.resolve(), args.sameboy_capture.resolve(), args.output.resolve())
+            args.runner.resolve(), args.sameboy_capture.resolve(), args.output.resolve(), args.suite)
         print(json.dumps(report))
         return 0 if passes(report) else 1
     except (OSError, ValueError, subprocess.SubprocessError) as error:
-        parser.exit(2, f'external Mooneye timer validation failed: {error}\n')
+        parser.exit(2, f'external Mooneye validation failed: {error}\n')
 
 
 if __name__ == '__main__':

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add pinned external interrupt/DIV conformance comparisons and authored first-vector
+  DIV witnesses for hardware timer and software IF requests; preserve the observed
+  acceptance-phase difference without changing emulator timing.
+
 - Add authored HALT/NOP wait controls with IME enabled/disabled, direct timer-IF
   edge reads and DIV-boundary observations; retain reference service-phase
   differences without changing core timing.

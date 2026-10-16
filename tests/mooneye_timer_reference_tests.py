@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Offline provenance and fail-closed protocol contracts for external timer tests."""
+"""Offline provenance and fail-closed protocol contracts for external timer and interrupt/DIV tests."""
 import json
 from pathlib import Path
 import subprocess
@@ -22,6 +22,28 @@ class Contracts(unittest.TestCase):
         self.assertEqual(len(pin['tests']), 5)
         for digest in pin['tests'].values():
             self.assertRegex(digest, r'^[0-9a-f]{64}$')
+
+    def test_interrupt_div_suite_has_separate_paths_and_complete_results(self):
+        pin = json.loads(reference.SUITES['interrupt-div'].read_text())
+        self.assertEqual(pin['acceptance_directory'], '')
+        self.assertEqual(len(pin['tests']), 10)
+        self.assertIn('timer/div_write', pin['tests'])
+        self.assertNotIn('halt_ime1_timing2-GS', pin['tests'])
+        for digest in pin['tests'].values():
+            self.assertRegex(digest, r'^[0-9a-f]{64}$')
+        rows = [dict(model=m, test=t, captures={name: dict(passed=True, repeatable=True)
+                for name in ('gbb', 'sameboy')})
+                for m in reference.MODELS for t in pin['tests']]
+        report = dict(suite='interrupt-div', rows=rows)
+        self.assertTrue(reference.passes(report))
+        self.assertFalse(reference.passes(dict(rows=rows)))
+        self.assertFalse(reference.passes(dict(report, suite='unknown')))
+        self.assertFalse(reference.passes(dict(report, rows=rows[:-1])))
+        rows[0]['captures']['gbb']['passed'] = False
+        self.assertFalse(reference.passes(report))
+        rows[0]['captures']['gbb']['passed'] = True
+        rows[0]['captures']['sameboy']['repeatable'] = False
+        self.assertFalse(reference.passes(report))
 
     def test_matching_owned_boot_per_model(self):
         import hashlib

@@ -796,6 +796,9 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_cgb_halt_wake_probe_contract
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_halt_wake_probe_tests.py)
+        add_test(NAME gameboy_cgb_irq_div_probe_contract
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_irq_div_probe_tests.py)
         add_test(NAME gameboy_mooneye_timer_reference_contract
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/mooneye_timer_reference_tests.py)

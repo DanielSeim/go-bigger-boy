@@ -728,6 +728,79 @@ clock witnesses, comparing hardware-requested and software-requested service.
 Use pinned interrupt/DIV timing conformance evidence before changing acceptance
 or bus sampling; keep STAT arbitration and double-speed LY as separate questions.
 
+### Interrupt/DIV conformance and first-vector clock witnesses
+
+The external Mooneye helper also accepts `--suite interrupt-div`. The default
+five-test timer suite remains unchanged. The separate pin file
+`tests/fixtures/external-reference/mooneye-interrupt-div.json` selects ten
+hardware-verified, CGB-applicable tests at the same Mooneye/WLA-DX revisions:
+`div_timing`, `intr_timing`, `reti_intr_timing`, `halt_ime1_timing`,
+`halt_ime0_nointr_timing`, `halt_ime0_ei`, `ei_timing`, `ei_sequence`,
+`rapid_di_ei`, and `timer/div_write`. Model-restricted `-GS` tests are excluded.
+Sources, generated ROMs and raw results stay external; pinned ROM hashes must
+match before either emulator runs.
+
+```sh
+python3 scripts/mooneye_timer_reference.py --suite interrupt-div \
+  --source /external/mooneye-test-suite --assembler-source /external/wla-dx \
+  --assembler-build /external/wla-dx-build \
+  --runner ./build/gbb_test_runner --sameboy-capture /external/sameboy-cgb-capture \
+  --output /external/mooneye-interrupt-div-results
+```
+
+On 2026-10-16 all ten tests passed twice in GBB and pinned SameBoy 1.0.3 on
+CGB0/CGB-C/CGB-E: **120 successful executions**, with model-matched owned boots.
+In upstream `intr_timing`, software serial IF requests bracket the DIV boundary
+and check five-machine-cycle interrupt entry. `div_timing` checks DIV reset and
+read timing. These independent conformance results support the general clock
+and service path; they do not adjudicate a fast hardware timer request's exact
+acceptance phase. Reports retain `qualification=false`.
+
+The owned first-vector probe removes the JP-to-recorder from the initial sample:
+
+```sh
+python3 scripts/cgb_irq_div_probe.py \
+  --runner ./build/gbb_test_runner --sameboy-capture /external/sameboy-cgb-capture \
+  --output /external/cgb-irq-div-results
+```
+
+It runs **96 paired cases / 384 captures** on CGB-E, across both CPU speeds,
+six timer-start phases, four vector-read phases and two request sources. IME
+is enabled before DIV reset, IE selects only timer, and the CPU waits using NOPs.
+The hardware path enables TAC with TIMA=FF/TMA=00. The software path leaves TAC
+disabled and writes timer IF at the independently predicted hardware reload
+cycle. At vector 0050, zero to three NOPs precede the first `LDH A,(DIV)`; its
+result is stored before the recorder samples TIMA and IF. The handler never
+returns. Completion, guard and IF-acknowledgement witnesses must pass.
+
+The request alignment and predicted read times assume reload four T-cycles
+after overflow, next-four-cycle acceptance, 20-cycle entry and reads at the
+end of their bus cycle. They are explicit hypotheses, not measured absolute
+hardware timestamps. TIMA is diagnostic only because the software timer is
+stopped; paired comparison uses DIV and acknowledged IF.
+
+Local results: **92/96 pairs matched**, every capture repeated, and all structural
+witnesses passed. At start phases 43 and 44, with three vector NOPs, the predicted
+DIV read is T256. GBB reads DIV=1 for both request sources. SameBoy reads DIV=0
+for the hardware request and DIV=1 for software IF, at both speeds. All 48
+within-GBB request relations matched; 44/48 SameBoy relations matched. Read
+padding two remains below the boundary in both cores. The DIV result is sampled
+at the vector itself, so this difference precedes the former recorder JP and
+its longer instruction sequence. The full comparison returns **1**, preserving
+the unresolved differences, while individual finite-model predictions remain
+separate diagnostic fields.
+
+Offline and optional native contracts are in `tests/cgb_irq_div_probe_tests.py`;
+CTest registers `gameboy_cgb_irq_div_probe_contract`. Native tests require
+`GBB_TEST_RUNNER` and `GBB_SAMEBOY_CGB_CAPTURE`, check complete repeatable logs and
+truthful comparisons, and do not enshrine the current disagreement as expected
+hardware behavior.
+
+Next isolate the timer reload/request acceptance boundary with matched
+software-request phases one machine cycle either side, and obtain an independent
+hardware timer-vector DIV witness before changing core timing. Keep STAT
+arbitration and double-speed LY separate from this remaining timer question.
+
 Keep three results separate: GBB's own deterministic screenshot regression,
 GBB-versus-SameBoy frame/PCM behavior, and audio waveform comparison. In
 particular, the oscilloscope visualizes digital register amplitudes; it does not
