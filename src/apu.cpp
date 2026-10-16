@@ -134,6 +134,7 @@ void Apu::write_register(const std::uint16_t address,
             power_off();
         } else if (!powered_) {
             powered_ = true;
+            power_clock_phase_ = 0;
             cgb_e_power_cycle_startup_ = cgb_e_revision_;
             frame_sequencer_step_ = 0;
             skip_frame_sequencer_event_ = divider_apu_signal;
@@ -280,6 +281,11 @@ void Apu::write_register(const std::uint16_t address,
 }
 
 void Apu::tick(const unsigned cycles) noexcept {
+    // CGB-E pulse startup aligns to the 1-MHz clock established by NR52,
+    // including while both channels are disabled and audio output is muted.
+    if (powered_ && cgb_e_revision_) {
+        power_clock_phase_ = static_cast<std::uint8_t>((power_clock_phase_ + cycles) & 3U);
+    }
     const auto refresh_mixer = [&]() noexcept {
         const std::array<float, 4> outputs{
             powered_ ? pulse_output(pulse1_, 0x01) : 0.0F,
@@ -447,6 +453,7 @@ void Apu::power_off() noexcept {
     const auto wave_length = wave_.length;
     const auto noise_length = noise_.length;
     powered_ = false;
+    power_clock_phase_ = 0;
     std::fill(registers_.begin(), registers_.end(), 0);
     pulse1_ = {};
     pulse2_ = {};
@@ -492,7 +499,9 @@ void Apu::trigger_pulse1() noexcept {
                         ? (was_enabled ? active_channel_trigger_delay
                                        : inactive_channel_trigger_delay)
                         : channel_trigger_delay;
-    if (modern_cgb_ && !was_enabled) {
+    if (cgb_e_startup && !was_enabled) {
+        pulse1_.timer += (4U - power_clock_phase_) & 3U;
+    } else if (modern_cgb_ && !was_enabled) {
         const auto alignment = period >= 16
                                    ? modern_cgb_inactive_square_alignment
                                    : modern_cgb_inactive_square_alignment / 2;
@@ -543,7 +552,9 @@ void Apu::trigger_pulse2() noexcept {
                         ? (was_enabled ? active_channel_trigger_delay
                                        : inactive_channel_trigger_delay)
                         : channel_trigger_delay;
-    if (modern_cgb_ && !was_enabled) {
+    if (cgb_e_startup && !was_enabled) {
+        pulse2_.timer += (4U - power_clock_phase_) & 3U;
+    } else if (modern_cgb_ && !was_enabled) {
         const auto alignment = period >= 16
                                    ? modern_cgb_inactive_square_alignment
                                    : modern_cgb_inactive_square_alignment / 2;

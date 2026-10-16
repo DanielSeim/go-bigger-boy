@@ -774,11 +774,46 @@ void test_save_state_round_trip_and_validation() {
           "save states restore live and latched MBC3 RTC state");
 }
 
+void test_saved_pulse_enable_phase() {
+    auto rom = banked_rom(2, 0, 0, 0);
+    rom[0x143] = 0x80;
+    for (const unsigned offset : {0U, 5U}) {
+        for (unsigned phase = 0; phase < 4; ++phase) {
+            gameboy::Emulator emulator{gameboy::Cartridge{rom}, gameboy::HardwareModel::cgb_e};
+            auto& bus = emulator.bus();
+            bus.write8(0xFF26, 0);
+            bus.write8(0xFF26, 0x80);
+            bus.tick(80 + phase);
+            bus.write8(0xFF11 + offset, 0x80);
+            bus.write8(0xFF12 + offset, 0x80);
+            bus.write8(0xFF13 + offset, 0xFF);
+            const auto state = emulator.save_state();
+            const auto record = [&]() {
+                bus.write8(0xFF14 + offset, 0x87);
+                std::vector<std::uint8_t> pcm;
+                for (unsigned cycle = 0; cycle < 64; ++cycle) {
+                    bus.tick(1);
+                    pcm.push_back(bus.read8(0xFF76));
+                }
+                return pcm;
+            };
+            const auto expected = record();
+            bus.tick(3); // Disturb phase before restoring into the same machine.
+            emulator.load_state(state);
+            check(emulator.save_state() == state,
+                  "save states retain NR52-relative pulse phase bits");
+            check(record() == expected,
+                  "restoring before a pulse trigger preserves subsequent PCM edges");
+        }
+    }
+}
+
 } // namespace
 
 int main() {
     try {
         test_save_state_round_trip_and_validation();
+        test_saved_pulse_enable_phase();
     } catch (const std::exception& error) {
         std::cerr << "Unexpected exception: " << error.what() << '\n';
         return 1;

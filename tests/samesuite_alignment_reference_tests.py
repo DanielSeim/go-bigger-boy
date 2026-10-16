@@ -37,6 +37,11 @@ class Contracts(unittest.TestCase):
         hit = 'CPU_FIRST_PC cycle=123 duration=12 pc=0527 opcode=00 next_pc=0528 sp=fffe\n'
         result = subprocess.CompletedProcess([], 0, 'PASS (Mooneye)\n', hit)
         self.assertTrue(reference.protocol('gbb', result)['passed'])
+        result.stdout = '\x03\x05\x08\n\x15"PASS (Mooneye)\n'
+        self.assertTrue(reference.protocol('gbb', result)['passed'])
+        result.stdout = 'arbitrary text PASS (Mooneye)\n'
+        with self.assertRaises(ValueError):
+            reference.protocol('gbb', result)
         result.returncode, result.stdout = 1, 'BBBBBB'
         result.stderr = hit + 'FAIL (Mooneye result registers)\n'
         self.assertFalse(reference.protocol('gbb', result)['passed'])
@@ -91,6 +96,7 @@ class NativeContracts(unittest.TestCase):
                 Path(os.environ['GBB_SAMEBOY_CGB_CAPTURE']).resolve(), Path(tmp) / 'results')
             self.assertFalse(report['qualification'])
             self.assertEqual(len(report['rows']), 4)
+            self.assertTrue(reference.passes(report))
             for row in report['rows']:
                 a, b = (row['captures'][e]['samples'] for e in ('gbb', 'sameboy'))
                 self.assertEqual(row['match'], a == b)

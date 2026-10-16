@@ -323,6 +323,35 @@ void test_cgb_revision_envelope_write_behavior() {
           "CGB-E applies the zombie-mode NRx2 direction write");
 }
 
+void test_cgb_e_power_relative_pulse_phase() {
+    for (const unsigned offset : {0U, 5U}) {
+        for (unsigned phase = 0; phase < 4; ++phase) {
+            for (const bool muted : {false, true}) {
+                gameboy::MemoryBus bus{gameboy::Cartridge{cgb_test_rom()}};
+                bus.initialize_post_boot(gameboy::HardwareModel::cgb_e);
+                bus.set_audio_enabled(!muted);
+                bus.write8(0xFF26, 0);
+                bus.tick(17); // Powered-off time must not anchor the new clock.
+                bus.write8(0xFF26, 0x80);
+                bus.tick(80 + phase); // Exercise the batched disabled-channel path.
+                bus.write8(0xFF26, 0x80); // An already-powered write must retain phase.
+                bus.write8(0xFF11 + offset, 0x80);
+                bus.write8(0xFF12 + offset, 0x80);
+                bus.write8(0xFF13 + offset, 0xFF);
+                bus.write8(0xFF14 + offset, 0x87);
+                const unsigned expected = 28 + ((4 - phase) & 3);
+                unsigned first_high = 0;
+                for (unsigned cycle = 1; cycle <= 36; ++cycle) {
+                    bus.tick(1);
+                    if (first_high == 0 && bus.read8(0xFF76) != 0) first_high = cycle;
+                }
+                check(first_high == expected,
+                      "CGB-E pulse startup follows NR52-relative quarter-cycle phase");
+            }
+        }
+    }
+}
+
 void test_cgb_revision_boundary_fixtures() {
     const auto first_pulse2_high_cycle = [](const gameboy::HardwareModel model) {
         gameboy::MemoryBus bus{gameboy::Cartridge{cgb_test_rom()}};
@@ -470,6 +499,7 @@ int main() {
     test_apu_pulse1_sweep_wave_and_noise();
     test_cgb_revision_envelope_write_behavior();
     test_cgb_revision_boundary_fixtures();
+    test_cgb_e_power_relative_pulse_phase();
     test_apu_pulse2_samples_and_length();
     test_apu_high_pass_filter();
     return failures == 0 ? 0 : 1;

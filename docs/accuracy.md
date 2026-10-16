@@ -515,7 +515,7 @@ executable must be built against the pinned SameBoy Core revision; its binary
 hash is recorded, while the script does not infer a library revision from that
 hash.
 
-On 2026-10-16 all four tests passed in SameBoy and failed in GBB, with repeatable
+Before the 2026-10-16 clock correction all four tests passed in SameBoy and failed in GBB, with repeatable
 protocols and curves. Each curve has three 16-sample groups, using 0/1/3 NOPs to
 vary either channel-trigger placement (`align`) or NR52 enable placement
 (`align_cpu`). Within a group, the delay before the PCM read ranges from 0 to
@@ -534,18 +534,53 @@ clock phase as a useful next hypothesis; a uniform trigger-delay adjustment
 would not express all these observations. These are register-amplitude timing
 measurements, separate from analog waveforms and from the SGB SPC700 driver.
 
-The full comparison deliberately returns **1** with `qualification=false` until
+The full comparison returns **1** with `qualification=false` unless
 both conformance protocols pass and both curves match. Contract tests cover pins,
 PCM fields, complete pass/fail signatures, fail-closed reports and hash rejection
 before execution. Optional native tests require `GBB_TEST_RUNNER`,
 `GBB_SAMEBOY_CGB_CAPTURE` and `GBB_SAMESUITE_ROM_DIR`; they check repeated frozen
-curves and cross-channel symmetry without requiring GBB's current failure to
-persist. CTest registers `gameboy_samesuite_alignment_reference_contract`.
+curves, cross-channel symmetry and successful comparisons. CTest registers
+`gameboy_samesuite_alignment_reference_contract`.
 
-Next add an independently authored NR52-enable/trigger-phase control at normal
-and double CPU speed, then use the evidence to correct CGB-E pulse clock
-alignment while retaining revision-specific and existing waveform contracts.
-No APU timing was changed by the comparison harness.
+The independently authored `scripts/cgb_pulse_phase_probe.py` now varies NR52
+enable and trigger phases separately over 0..3 NOPs, at both CPU speeds and for
+both pulse channels. Each of the 64 cases restarts NR52/DIV for each of 32 PCM
+observations. It uses frequency 2047, duty 50%, volume 8 and straight-line code;
+timer, interrupts and LCD remain disabled until the bounded log is complete.
+PCM reads finish 12 + 4*n CPU T-cycles after the trigger, and NR52 status is
+recorded separately. Guard/completion checks and active-channel status reject
+incomplete logs; two captures per core check repeatability. No upstream program
+or expected-results table is used to build the controls.
+
+Before correction, all 32 normal-speed curves matched; all 32 double-speed
+curves differed. At normal speed the first nonzero observation was index 4 in
+both cores. At double speed it was index 10 in GBB, compared with 11 for even
+trigger padding and 12 for odd trigger padding in SameBoy. Moving enable timing
+relative to DIV did not affect these curves. Both channels matched after nibble
+normalization. This independently confirmed the enable-relative clock phase.
+
+CGB-E/AGB inactive pulse triggers now round the initial countdown to the
+1-MHz clock established by NR52 enable, replacing the fixed inactive-channel
+phase adjustment on that path. The clock advances even with channels disabled
+or presentation audio muted; active retriggers and other revision paths retain
+their existing behavior. All 64 authored cases now match, as do the complete
+48-byte curves and explicit pass protocols of the four pinned SameSuite tests.
+The full SameSuite report improves from 36 pass / 40 fail to 55 pass / 21 fail;
+six unsupported revisions and two informational entries remain unchanged.
+All 19 status changes are failures becoming passes, including one AGB frequency
+change test. These are reference comparisons, not physical hardware validation
+or qualification of the SGB SPC700 sound driver.
+The measured curves, changed case IDs, source/executable hashes and successful
+168-case conformance result are recorded in
+`tests/fixtures/external-reference/cgb-pulse-phase.json`.
+
+Save states retain the two-bit clock phase in previously unused bits 3-4 of the
+APU sequencer byte, preserving the existing layout. Old states restore phase
+zero because they did not record it. Regression contracts restore before a
+trigger at all four phases for both channels, and verify subsequent PCM edges;
+direct core contracts also cover muted output and batched disabled-channel
+clocking. CTest registers `gameboy_cgb_pulse_phase_probe_contract` for the
+offline tools, with an optional complete paired native matrix.
 
 DIV/APU edges are dispatched at their timer-cycle boundary rather than being
 queued until the end of a bus batch. The APU also models the hardware rule that
@@ -555,18 +590,18 @@ tests and the corresponding SameSuite DIV-trigger ROMs. A suppressed first edge
 is also treated as a non-length step when NRx4 enables a length counter: the
 one-tick counter receives its extra clock and is reloaded by a simultaneous
 trigger. This matches SameSuite's DMG `div_write_trigger_10` case; the ordinary
-two-tick high-start case remains covered separately. On modern CGB starts,
-inactive square channels also retain the additional long-period alignment
-interval observed by SameSuite's `channel_[12]_volume_div` cases, while active
-restarts keep the established startup timing.
+two-tick high-start case remains covered separately. The CGB-E/AGB inactive
+square-channel path uses the NR52-relative alignment described above, including
+the long-period `channel_[12]_volume_div` cases; other modern-CGB profiles and
+active restarts retain their established startup timing.
 
 Square duty writes now use a latched duty value: writes made while a channel is
 active take effect at the next waveform boundary, while writes made while it is
 inactive are applied for the next trigger. The latched and pending values are
-stored in save-state version 19, and trigger suppression plus the CGB 1 MHz
-phase are stored in version 20, so restoring during a duty transition, period
-reload, or speed-switch half-cycle remains deterministic. The APU phase is
-stable during normal-speed execution and advances only on alternating CGB
+stored in save-state version 19, and trigger suppression plus the
+CPU-to-APU half-cycle phase are stored in version 20, so restoring during a duty
+transition, period reload, or speed-switch half-cycle remains deterministic.
+The CPU-to-APU phase is stable during normal-speed execution and advances only on alternating CGB
 double-speed half-cycles; this also works when bus ticks are split across
 individual CPU accesses.
 

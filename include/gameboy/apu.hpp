@@ -163,6 +163,7 @@ private:
     bool modern_cgb_{};
     bool cgb_e_revision_{};
     bool cgb_e_power_cycle_startup_{};
+    std::uint8_t power_clock_phase_{};
     bool powered_{};
     bool audio_enabled_{true};
     PulseState pulse1_{};

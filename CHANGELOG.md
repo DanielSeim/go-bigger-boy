@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Align CGB-E/AGB inactive pulse triggers to the NR52-relative 1-MHz clock,
+  retaining the phase across save/load. All 64 authored phase cases and four
+  pinned SameSuite alignment curves now match SameBoy; the full SameSuite
+  report improves from 36 to 55 passes without losing an existing pass.
+
 - Add opt-in pinned SameSuite CH1/CH2 alignment comparisons against SameBoy,
   with repeated explicit protocol results, complete 48-sample PCM curves and
   capture-after-completion checks; retain the measured phase discrepancy.

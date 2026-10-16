@@ -813,6 +813,9 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_samesuite_alignment_reference_contract
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/samesuite_alignment_reference_tests.py)
+        add_test(NAME gameboy_cgb_pulse_phase_probe_contract
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_pulse_phase_probe_tests.py)
         add_test(NAME gameboy_external_suite_harness
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/external_suite_tests.py)

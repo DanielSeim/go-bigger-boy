@@ -718,5 +718,20 @@ CH1/CH2 tests against SameBoy, with full repeated PCM curves and explicit result
 protocols. `gameboy_samesuite_alignment_reference_contract` runs offline. Set
 `GBB_TEST_RUNNER`, `GBB_SAMEBOY_CGB_CAPTURE` and `GBB_SAMESUITE_ROM_DIR` when running
 `tests/samesuite_alignment_reference_tests.py` to enable the paired native check.
-The experimental comparison retains the measured failures and returns 1 until
-protocols and curves pass in both emulators; tool-contract success is separate.
+The comparison returns 1 for any protocol/curve disagreement; all four tests now
+pass and match after the NR52-relative pulse-clock correction. Tool-contract
+success remains separate from hardware qualification.
+
+`scripts/cgb_pulse_phase_probe.py` builds independently authored, asset-free
+CGB-E controls for both pulse channels, with separate 0..3-NOP NR52-enable and
+trigger phases at normal and double CPU speed. Each of the 64 cases records
+32 PCM12/NR52 pairs in bounded WRAM, with timer/interrupts/LCD disabled during
+measurement. Use the same `--runner`, `--sameboy-capture`, and fresh `--output`
+arguments as the alignment comparison; optional `--case ch1-enable-0-trigger-1`
+restricts the run to one scenario at both speeds. Reports preserve complete
+curves, per-case ROM and executable hashes, commands, repeated captures and
+sample differences. Exit 1 means disagreement or invalid/non-repeatable data;
+exit 2 means a capture or input error. Reports always set `qualification=false`.
+`gameboy_cgb_pulse_phase_probe_contract` runs offline. Set `GBB_TEST_RUNNER` and
+`GBB_SAMEBOY_CGB_CAPTURE` to run the complete native matrix through
+`tests/cgb_pulse_phase_probe_tests.py`; no external test ROM is required.

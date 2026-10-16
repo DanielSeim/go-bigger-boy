@@ -19,7 +19,10 @@ def digest(path):
 
 def protocol(emulator, result):
     if emulator == 'gbb':
-        passed = result.returncode == 0 and 'PASS (Mooneye)' in result.stdout.splitlines()
+        # SameSuite emits the six Mooneye register bytes over serial without a
+        # terminating newline; text-mode subprocess capture normalizes CR to LF.
+        output = result.stdout.removeprefix('\x03\x05\x08\n\x15"')
+        passed = result.returncode == 0 and output == 'PASS (Mooneye)\n'
         failed = result.returncode == 1 and 'FAIL (Mooneye result registers)' in result.stderr.splitlines()
         hit = re.search(r'^CPU_FIRST_PC cycle=(\d+) .*next_pc=0528\b', result.stderr, re.M)
         if not (passed or failed) or hit is None:

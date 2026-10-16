@@ -61,8 +61,11 @@ void SaveStateApuCodec::write(save_state_format::Writer& writer,
     writer.u8(apu.sweep_timer_);
     writer.boolean(apu.sweep_enabled_);
     writer.boolean(apu.sweep_negated_);
+    // Previously unused bits 3-4 retain the NR52-relative phase without
+    // changing the layout. Older states restore the phase as zero.
     writer.u8(static_cast<std::uint8_t>(
         apu.frame_sequencer_step_ |
+        (apu.power_clock_phase_ << 3) |
         (apu.skip_frame_sequencer_event_ ? 0x80 : 0) |
         (apu.cgb_e_power_cycle_startup_ ? 0x40 : 0)));
     writer.u32(apu.sample_accumulator_);
@@ -122,6 +125,7 @@ void SaveStateApuCodec::read(save_state_format::Reader& reader, Apu& apu,
         static_cast<std::uint8_t>(frame_sequencer_state & 0x07);
     apu.skip_frame_sequencer_event_ = (frame_sequencer_state & 0x80) != 0;
     apu.cgb_e_power_cycle_startup_ = (frame_sequencer_state & 0x40) != 0;
+    apu.power_clock_phase_ = (frame_sequencer_state >> 3) & 3;
     apu.sample_accumulator_ = reader.u32();
     apu.left_capacitor_ = reader.f32();
     apu.right_capacitor_ = reader.f32();
