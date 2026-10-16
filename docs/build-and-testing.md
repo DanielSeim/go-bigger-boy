@@ -754,3 +754,21 @@ keep `qualification=false` even when the comparison succeeds.
 `GBB_TEST_RUNNER` and `GBB_SAMEBOY_CGB_CAPTURE` to enable native measurements in
 `tests/cgb_pulse_frequency_probe_tests.py`; additionally set
 `GBB_SAMESUITE_ROM_DIR` for `tests/samesuite_frequency_reference_tests.py`.
+
+Add `--lifecycle` to `scripts/cgb_pulse_frequency_probe.py` to select the separate
+48-case active-retrigger/speed-switch matrix. It covers both pulse channels,
+both initial CPU speeds, high/low/unchanged-frequency writes and an equal-cost
+no-write control, with retrigger-only, switch-only and switch-then-retrigger
+sequences. `--case ch1-observe-retrigger` selects one no-write scenario at both
+initial speeds; lifecycle cases require `--lifecycle`. KEY1 witnesses confirm
+the initial speed and each observation's final speed with the prepare bit
+cleared. The report's `double_speed` is the initial speed; lifecycle captures
+also record `initial_double_speed` and `final_double_speed`. Delay timestamps
+use the last retrigger or speed-switch completion as their stated anchor.
+Switch scenarios restore the initial speed before resetting NR52/DIV for the
+next observation. The original default matrix, schema and ROM bytes remain
+unchanged. The lifecycle schema is `gbb-cgb-pulse-frequency-lifecycle-probe-v1`;
+exit 1 retains any reference disagreement, including in the no-write controls.
+The optional native test covers both matrices and does not require known
+lifecycle differences to persist. Offline tests verify original ROM hashes,
+speed witnesses, completion/guard checks and bounded scenario selection.

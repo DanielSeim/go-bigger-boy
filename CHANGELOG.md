@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Add opt-in pulse frequency controls for active retriggers and CPU speed
+  switches, including equal-cost no-write observations and KEY1 witnesses.
+  Record 48 repeatable reference comparisons and retain the 42 differences
+  explicitly, without changing emulator timing or the original probe ROMs.
+
 - Correct CGB-E pulse frequency-high writes during the NR52-relative reload
   window, preserving frequency-low and AGB timing. All 12 authored boundary
   cases and the pinned SameSuite frequency test now match SameBoy; SameSuite

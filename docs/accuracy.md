@@ -623,6 +623,38 @@ qualification and SGB SPC700 audio. The pin is
 `tests/fixtures/external-reference/samesuite-frequency.json`; measured before/
 after evidence is `tests/fixtures/external-reference/cgb-pulse-frequency.json`.
 
+The opt-in `--lifecycle` frequency matrix now checks 48 additional cases on
+the unchanged `b31fff5` core: both channels, both initial CPU speeds and
+high/low/unchanged-frequency/no-write operations, following an active retrigger,
+a CPU-speed switch, or a switch then an active retrigger. Every case sweeps 64
+delays. The no-write operation replaces LDH with three NOPs of equal CPU cost;
+it does not touch either frequency register. Initial and per-observation KEY1
+witnesses verify actual speed and a cleared prepare bit, independently of the
+requested ROM variant. Four-byte PCM12/PCM12/NR52/KEY1 records occupy exactly
+C100..C1FF, followed by the C200 guard. Completed logs are frozen before the
+LCD is enabled for capture. NR52/DIV are reset for each observation, and switch
+cases restore the initial CPU speed before the next reset.
+
+All 192 executions repeated with valid records and requested speed changes.
+Six of 48 cases matched SameBoy; 42 differed. At normal speed, retrigger-only
+low-register, unchanged-frequency and no-write cases matched for both channels;
+the high-register cases differed. All double-speed retrigger-only cases and all
+switch cases differed. CH1 and CH2 were identical after nibble normalization.
+Even the double-speed retrigger-only no-write control differed at indices 28,
+36, 49 and 57: first nonzero immediate/late observations occurred at 49/28 in
+GBB and 50/29 in SameBoy. The original 12 cases still match, and their ROMs
+remain byte-identical to the recorded pin hashes.
+
+These controls show that frequency-write latch timing alone cannot explain
+the lifecycle discrepancies. STOP-transition clocks and retrigger phase need
+separate isolation before further corrections. No core timing is changed by
+this matrix, no hardware baseline is qualified, and mismatches still return
+exit 1. Per-case hashes, differing indices and first differing observations
+are recorded in `tests/fixtures/external-reference/cgb-pulse-frequency-lifecycle.json`.
+Next isolate the double-speed active-retrigger clock using the no-write path,
+then separate STOP-transition clocking before extending frequency-write fixes
+or moving on to envelope glitches.
+
 DIV/APU edges are dispatched at their timer-cycle boundary rather than being
 queued until the end of a bus batch. The APU also models the hardware rule that
 enabling it while the DIV/APU input is high skips the first falling-edge event;
