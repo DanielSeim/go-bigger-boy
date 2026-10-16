@@ -334,9 +334,74 @@ GBB_SAMEBOY_CGB_CAPTURE=/external/sameboy-cgb-capture \
   python3 tests/cgb_combined_irq_probe_tests.py
 ```
 
-Next isolate mode-2 STAT assertion and timer interrupt-service latency around the
-first phase divergence using a short authored timing probe. Establish the timing
-contract before changing CPU, PPU or APU behavior.
+## Short IRQ timing probes
+
+`scripts/cgb_irq_timing_probe.py` records 32 events and then disables the timer
+and interrupts, freezing the log before capture. Its six authored scenarios are
+timer-only, STAT-only, mixed short handlers, mixed with extra STAT work, mixed
+with the same-cost SCX write, and IME-disabled/IE=0 STAT polling. The extra-work
+control uses three NOPs in place of the 12-T-cycle SCX write. Logging records
+source (STAT=2, timer=4), LY, low five IF bits and TIMA. Interrupt handlers observe
+acknowledged IF; the polling case observes latched STAT IF without CPU dispatch.
+
+```sh
+python3 scripts/cgb_irq_timing_probe.py \
+  --runner ./build/gbb_test_runner \
+  --sameboy-capture /external/sameboy-cgb-capture \
+  --output /external/cgb-irq-timing-results
+```
+
+Use the same pinned reference/boot and newly built runner as above. All six cases
+run at both speeds, capturing frames 2 and 4 twice per emulator: 24 paired logs,
+96 captures. Completion, guard, expected event sources, IF acknowledgement and
+polled-request constraints must pass. Reports preserve all events, hashes,
+commands, reference metadata and the first differing tuple. Exit 0 requires
+repeatable agreement and authored constraints, exit 1 preserves mismatches, and
+exit 2 reports execution or input failure. `qualification` remains false.
+
+Local results on 2026-10-16: all guards, event constraints and repeatability checks
+passed. Logs froze identically between frames 2 and 4. The matched-cost pad and
+SCX controls produced identical logs within each emulator. Six of 24 paired
+checkpoints matched; 18 differed. Frame-2 differing event counts (of 32):
+
+| Scenario | Normal speed | Double speed |
+| --- | --- | --- |
+| Timer only | 0 | 1 |
+| STAT only | 0 | 25 |
+| Mixed short | 15 | 5 |
+| Mixed extra-work NOPs | 16 | 5 |
+| Mixed SCX write | 16 | 5 |
+| Polled STAT request | 0 | 29 |
+
+At normal speed, the first mixed-short event agrees: `[STAT, LY=1, IF=4, TIMA=232]`,
+showing a timer request pending during STAT service. The next event differs:
+`[timer, LY=1, IF=0, TIMA=244]` in GBB versus TIMA=245 in SameBoy. The extra-work
+and SCX cases likewise first disagree on the following timer event, at TIMA=246
+versus 247. Agreement of the pad/SCX controls excludes the SCX register write as
+a necessary trigger in these probes. Normal-speed isolated and polled cases do
+not reproduce that discrepancy.
+
+Double speed also has independent observations to resolve: timer-only differs
+in LY at event 14 (7 versus 8, while TIMA=235 agrees), and the first polled STAT
+tuple differs in TIMA (234 versus 230). These must not be folded into a single
+unproven explanation. Polling and logging add instruction latency; observations
+are quantized by the 16-CPU-T-cycle timer tick and do not establish exact STAT
+assertion or interrupt-entry timestamps. No CPU/PPU/APU timing has been changed.
+
+Offline CTest registers `gameboy_cgb_irq_timing_probe_contract`. The optional
+native contract validates repeatability, frozen buffers, matched-cost controls
+and truthful reporting without requiring today's cross-emulator mismatch forever:
+
+```sh
+GBB_TEST_RUNNER=./build/gbb_test_runner \
+GBB_SAMEBOY_CGB_CAPTURE=/external/sameboy-cgb-capture \
+  python3 tests/cgb_irq_timing_probe_tests.py
+```
+
+Next isolate dispatch of an already-pending timer request immediately after STAT
+`RETI` at normal speed with a controlled software-request timing probe. Investigate
+double-speed LY/STAT boundaries separately. Establish an independent timing
+contract before changing emulator behavior.
 
 Keep three results separate: GBB's own deterministic screenshot regression,
 GBB-versus-SameBoy frame/PCM behavior, and audio waveform comparison. In

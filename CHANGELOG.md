@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add short authored CGB IRQ timing logs with isolated/mixed interrupts,
+  equal-cost scrolling controls and IME-disabled STAT polling; retain observed
+  reference differences without changing emulator timing.
+
 - Add authored combined CGB timer/STAT/VBlank probes with controlled APU updates,
   sample handoff checks, timer-phase and first-pixel diagnostics; report reference
   differences without changing core timing or qualifying a hardware baseline.

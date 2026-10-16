@@ -102,6 +102,7 @@ def samples(data, scenario):
 
 def run_probe(runner, adapter, output, *, scenarios=SCENARIOS, checkpoints=(2, 4),
               rom_builder=probe_rom, analyzer=None, compare_pixels=False,
+              comparison_key=None, comparison_name=None,
               schema='gbb-cgb-pcm-stat-probe-v1'):
     output.mkdir(parents=True, exist_ok=False)
     boot_data = anchor.owned_boot()
@@ -163,8 +164,8 @@ def run_probe(runner, adapter, output, *, scenarios=SCENARIOS, checkpoints=(2, 4
                     captures[emulator] = dict(takes[0], repeatable=takes[0] == takes[1])
                 row = dict(scenario=scenario, double_speed=double_speed, frame=frame,
                            rom_sha256=hashlib.sha256(rom_data).hexdigest(), captures=captures)
-                key = 'rgb_sha256' if scenario.startswith('scroll') else 'pcm_sha256'
-                row['comparison'] = 'pixels' if key == 'rgb_sha256' else 'pcm_samples'
+                key = comparison_key or ('rgb_sha256' if scenario.startswith('scroll') else 'pcm_sha256')
+                row['comparison'] = comparison_name or ('pixels' if key == 'rgb_sha256' else 'pcm_samples')
                 row['match'] = captures['gbb'][key] == captures['sameboy'][key]
                 if compare_pixels:
                     row['pixel_match'] = captures['gbb']['rgb_sha256'] == captures['sameboy']['rgb_sha256']
@@ -190,6 +191,13 @@ def run_probe(runner, adapter, output, *, scenarios=SCENARIOS, checkpoints=(2, 4
                     if captures['gbb'].get('sample_fields') == ['pcm12', 'pcm34', 'ly', 'tima']:
                         row['different_timer_phase_indices'] = [i for i, (a, b) in enumerate(zip(
                             captures['gbb']['samples'], captures['sameboy']['samples'])) if a[3] != b[3]]
+                elif key == 'event_sha256':
+                    a, b = captures['gbb']['events'], captures['sameboy']['events']
+                    row['different_event_indices'] = [i for i in range(len(a)) if a[i] != b[i]]
+                    row['first_event_difference'] = None
+                    if row['different_event_indices']:
+                        i = row['different_event_indices'][0]
+                        row['first_event_difference'] = dict(index=i, gbb=a[i], sameboy=b[i])
                 report['rows'].append(row)
     (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     return report

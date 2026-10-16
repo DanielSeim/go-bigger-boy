@@ -329,6 +329,10 @@ interrupt coverage.
 consumer and VBlank-update probes. Their paired comparison currently reports PCM
 and pixel differences; a passing tool contract does not qualify those results as
 reference parity. See the guide for the first timer-phase divergence.
+`gameboy_cgb_irq_timing_probe_contract` covers shorter isolated/mixed event logs,
+matched-cost SCX controls and IME-disabled STAT polling. Its measured normal-speed
+pending-timer distinction and separate double-speed observations remain research
+findings, documented in the same guide.
 
 ## Hardware-model matrix
 
