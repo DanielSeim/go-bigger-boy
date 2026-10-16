@@ -58,6 +58,7 @@ Emulator::Emulator(Cartridge cartridge, const HardwareModel model,
         }
         return;
     }
+    bus_.initialize_work_ram_power_on();
     bus_.initialize_post_boot(hardware_model_);
     if (boot_rom_mode_ == BootRomMode::diagnostic) {
         bus_.install_boot_rom(diagnostic_boot_rom(hardware_model_));

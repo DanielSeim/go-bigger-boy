@@ -83,6 +83,22 @@ std::uint64_t MemoryBus::debug_sgb_state_hash() const noexcept {
     return hash;
 }
 
+void MemoryBus::initialize_work_ram_power_on() noexcept {
+    // Hardware WRAM is undefined at power-on. A fixed PRNG gives nonuniform
+    // contents while keeping resets, recordings and test captures reproducible.
+    // This is not a measured SRAM-cell pattern; HRAM/VRAM and battery RAM have
+    // their own initialization contracts and are deliberately excluded.
+    std::uint32_t seed = 0x6D2B79F5U;
+    const auto next = [&seed]() noexcept {
+        seed ^= seed << 13;
+        seed ^= seed >> 17;
+        seed ^= seed << 5;
+        return static_cast<std::uint8_t>(seed >> 24);
+    };
+    for (auto& byte : wram_) byte = next();
+    for (auto& byte : *cgb_wram_) byte = next();
+}
+
 void MemoryBus::initialize_post_boot(const HardwareModel model) noexcept {
     sgb_host_audio_.clear();
     // The selected hardware profile controls the CPU-visible mode.  A
@@ -102,7 +118,7 @@ void MemoryBus::initialize_post_boot(const HardwareModel model) noexcept {
     ppu_.set_cgb_hardware(cgb_hardware_);
     ppu_.set_cgb_late_revision(model == HardwareModel::cgb ||
                                model == HardwareModel::cgb_e || is_agb_hardware(model));
-    timer_.initialize_post_boot(model);
+    timer_.initialize_post_boot(model, cgb_mode_);
     // The serial divider is reset-derived and is not synchronized when a
     // transfer starts. Preserve the phase at the boot-ROM handoff.
     serial_.initialize_post_boot(model);
@@ -128,7 +144,10 @@ void MemoryBus::initialize_post_boot(const HardwareModel model) noexcept {
     if (ppu_.write_register(0xFF40, 0x91)) {
         request_interrupt(1);
     }
-    ppu_.initialize_post_boot_phase(model);
+    std::array<std::uint8_t, 48> logo{};
+    for (unsigned i = 0; i < logo.size(); ++i)
+        logo[i] = cartridge_.read(static_cast<std::uint16_t>(0x104 + i));
+    ppu_.initialize_post_boot_phase(model, logo);
 }
 
 void MemoryBus::initialize_dmg_power_on() {
@@ -151,8 +170,7 @@ void MemoryBus::initialize_dmg_power_on() {
     serial_.reset_diagnostics();
     serial_output_.clear();
     boot_rom_enabled_ = false;
-    wram_.fill(0);
-    cgb_wram_->fill(0);
+    initialize_work_ram_power_on();
     io_.fill(0);
     hram_.fill(0);
     interrupt_enable_ = 0;
@@ -269,6 +287,7 @@ std::uint8_t MemoryBus::read8(const std::uint16_t address) const noexcept {
         return cgb_mode_ ? static_cast<std::uint8_t>(0xF8 | wram_bank_) : 0xFF;
     case 0xFF72:
     case 0xFF73: return cgb_hardware_ ? io_[address - 0xFF00] : 0xFF;
+    case 0xFF74: return cgb_mode_ ? io_[0x74] : 0xFF;
     case 0xFF75:
         return cgb_hardware_
                    ? static_cast<std::uint8_t>(0x8F | (io_[0x75] & 0x70))
@@ -301,7 +320,13 @@ std::uint16_t MemoryBus::read16(const std::uint16_t address) const noexcept {
 
 std::uint8_t MemoryBus::cpu_read8(const std::uint16_t address) const noexcept {
     if (address == 0xFF46) return read8(address);
-    if (oam_dma_blocks(address)) return 0xFF;
+    if (oam_dma_blocks(address)) {
+        if (address >= 0xFE00 && address <= 0xFE9F) return 0xFF;
+        // A contending CPU sees the source byte driven by DMA, including
+        // instruction fetches and stack reads. The current index names the
+        // byte on the next DMA machine cycle; raw/debug reads stay unaffected.
+        return read8(static_cast<std::uint16_t>(oam_dma_source_ + oam_dma_index_));
+    }
     return read8(address);
 }
 
@@ -333,7 +358,13 @@ bool MemoryBus::oam_dma_blocks(const std::uint16_t address) const noexcept {
     }
     const auto cpu_uses_main_bus = address <= 0x7FFF ||
                                    (address >= 0xA000 && address <= 0xFDFF);
-    return cpu_uses_main_bus && !dma_uses_video_bus;
+    if (!cpu_uses_main_bus || dma_uses_video_bus) return false;
+    if (!cgb_hardware_) return true;
+    // CGB has separate cartridge and WRAM buses. A ROM-source transfer must
+    // not block WRAM stack traffic, and a WRAM source leaves ROM available.
+    const bool source_is_wram = oam_dma_source_ >= 0xC000;
+    const bool target_is_wram = address >= 0xC000;
+    return source_is_wram == target_is_wram;
 }
 
 void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) noexcept {
@@ -404,6 +435,8 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
     } else if (cgb_hardware_ &&
                (address == 0xFF72 || address == 0xFF73)) {
         io_[address - 0xFF00] = value;
+    } else if (cgb_mode_ && address == 0xFF74) {
+        io_[0x74] = value;
     } else if (cgb_hardware_ && address == 0xFF75) {
         io_[0x75] = static_cast<std::uint8_t>(value & 0x70);
     } else if (Apu::handles_register(address)) {

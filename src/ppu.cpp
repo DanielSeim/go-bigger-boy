@@ -112,7 +112,8 @@ void Ppu::set_dmg_palette(const DmgPalette& palette) noexcept {
     dmg_palette_ = palette;
 }
 
-void Ppu::initialize_post_boot_phase(const HardwareModel model) noexcept {
+void Ppu::initialize_post_boot_phase(const HardwareModel model,
+                                    const std::array<std::uint8_t, 48>& header_logo) noexcept {
     // The post-boot register image writes SCX while the LCD is still off,
     // but that initialization write must not look like a cartridge's
     // deliberate pre-startup SCX timing probe.
@@ -121,6 +122,28 @@ void Ppu::initialize_post_boot_phase(const HardwareModel model) noexcept {
     set_sgb_mode(model == HardwareModel::sgb || model == HardwareModel::sgb2);
     if (model == HardwareModel::dmg || model == HardwareModel::mgb ||
         model == HardwareModel::sgb || model == HardwareModel::sgb2) {
+        if (model == HardwareModel::dmg || model == HardwareModel::mgb) {
+            // Expand the loaded cartridge's logo into 2x monochrome pixels.
+            // Derive the image from its header; no fixed cartridge artwork is
+            // stored in the emulator. Each nibble supplies two identical rows.
+            unsigned target = 0x10;
+            for (const auto byte : header_logo) {
+                for (const unsigned shift : {4U, 0U}) {
+                    unsigned pixels = 0;
+                    for (int bit = 3; bit >= 0; --bit)
+                        pixels = (pixels << 2) | (((byte >> (shift + bit)) & 1U) ? 3U : 0U);
+                    for (unsigned row = 0; row < 2; ++row) {
+                        vram_[target++] = static_cast<std::uint8_t>(pixels);
+                        vram_[target++] = 0;
+                    }
+                }
+            }
+            for (unsigned tile = 0; tile < 12; ++tile) {
+                vram_[0x1904 + tile] = static_cast<std::uint8_t>(tile + 1);
+                vram_[0x1924 + tile] = static_cast<std::uint8_t>(tile + 13);
+            }
+            vram_[0x1910] = 25;
+        }
         // Later monochrome boot ROMs leave the registered-trademark tile at
         // $8190. The emulator skips the boot ROM, so reproduce that observable
         // post-boot VRAM state explicitly.
@@ -134,6 +157,14 @@ void Ppu::initialize_post_boot_phase(const HardwareModel model) noexcept {
     if (is_cgb_hardware(model)) {
         bg_palette_index_ = 0x88;
         object_palette_index_ = 0x90;
+        // Original color boots hand off during VBlank. Native CGB mode and
+        // monochrome compatibility take different final boot paths.
+        ly_ = cgb_mode_ ? 144 : 148;
+        dot_ = (cgb_mode_ ? 168U : 356U) + (is_agb_hardware(model) ? 4U : 0U);
+        mode_ = stat_mode_ = 1;
+        coincidence_ = false;
+        lcd_startup_ = false;
+        static_cast<void>(update_stat_line());
         return;
     }
     if (model != HardwareModel::dmg0) return;

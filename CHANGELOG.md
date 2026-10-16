@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Fix BullyGB failures from cleared WRAM, native CGB boot phases, missing
+  monochrome boot-logo VRAM, FF74 and OAM DMA bus conflicts. Five profiles now
+  pass the unmodified suite; retain the CGB0 DIV mismatch also observed with
+  original CGB0 boot firmware in SameBoy.
+
 - Add pinned BullyGB v1.2 to the external research suite and CI report, with
   verified ROM hashes and an explicit read-only terminal-screen result protocol.
 

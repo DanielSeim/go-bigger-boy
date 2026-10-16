@@ -264,6 +264,7 @@ void test_cartridge_serial_interrupt_and_resume() {
     rom[0x100] = 0xC3; rom[0x101] = 0x50; rom[0x102] = 0x01;
     const std::vector<std::uint8_t> program{
         0xF3, 0xAF, 0xE0, 0x0F,                 // DI; clear IF
+        0xEA, 0x00, 0xC0, 0xEA, 0x01, 0xC0,     // initialize guest ISR counters
         0x3E, 0x08, 0xEA, 0xFF, 0xFF,           // enable serial interrupt only
         0x3E, 0xA5, 0xE0, 0x01,                 // transmit A5
         0x3E, 0x81, 0xE0, 0x02,                 // start internal transfer
@@ -279,7 +280,8 @@ void test_cartridge_serial_interrupt_and_resume() {
         unsigned instructions = 0;
         while (original.bus().serial_port().bits_shifted() < 3 && instructions++ < 2000) {
             (void)original.step();
-            check(original.bus().read8(0xC001) == 0, "serial ISR cannot run before the eighth bit");
+            if (original.bus().serial_port().transfer_active())
+                check(original.bus().read8(0xC001) == 0, "serial ISR cannot run before the eighth bit");
         }
         check(original.bus().serial_port().bits_shifted() == 3 &&
                   original.bus().serial_port().transfer_active(),

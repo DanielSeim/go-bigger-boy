@@ -41,6 +41,47 @@ std::vector<std::uint8_t> cgb_test_rom(
 }
 
 // Independently authored standard HRAM DMA delay: 40 DEC/JR iterations.
+void test_ff74_native_and_compatibility() {
+    for (const bool color : {false, true}) {
+        gameboy::MemoryBus bus{gameboy::Cartridge{color ? cgb_test_rom() : test_rom()}};
+        bus.initialize_post_boot(gameboy::HardwareModel::cgb_e);
+        check(bus.read8(0xFF74) == (color ? 0 : 255), "FF74 reset value depends on CGB mode");
+        bus.write8(0xFF74, 0x5A);
+        check(bus.read8(0xFF74) == (color ? 0x5A : 255), "FF74 is writable only in CGB mode");
+    }
+    gameboy::MemoryBus bus{gameboy::Cartridge{test_rom()}};
+    bus.write8(0xFF74, 0x5A);
+    check(bus.read8(0xFF74) == 255, "FF74 is unmapped on monochrome hardware");
+}
+
+void test_dma_instruction_bus_and_stack() {
+    for (const auto model : {gameboy::HardwareModel::dmg, gameboy::HardwareModel::cgb_e}) {
+        auto image = test_rom();
+        image[0x143] = model == gameboy::HardwareModel::cgb_e ? 0x80 : 0;
+        // Source stream: LD A,42; PUSH AF; three trap bytes consumed while
+        // PUSH runs; INC A. DMA advances on internal and write cycles too.
+        const std::vector<std::uint8_t> stream{0x3E, 0x42, 0xF5, 0xFF, 0xFF, 0xFF, 0x3C};
+        std::copy(stream.begin(), stream.end(), image.begin());
+        gameboy::MemoryBus bus{gameboy::Cartridge{image}};
+        bus.initialize_post_boot(model);
+        bus.write8(0xC0FE, 0x99); bus.write8(0xC0FF, 0x99);
+        gameboy::Cpu cpu;
+        auto registers = cpu.registers();
+        registers.pc = 0x100; registers.sp = 0xC100;
+        cpu.load_registers(registers);
+        bus.write8(0xFF46, 0);
+        bus.tick(4);
+        check(cpu.step(bus) == 8 && cpu.registers().a == 0x42,
+              "instruction and operand fetches see successive DMA source bytes");
+        check(cpu.step(bus) == 16 && cpu.registers().sp == 0xC0FE,
+              "DMA-driven PUSH consumes its internal and write cycles");
+        check(cpu.step(bus) == 4 && cpu.registers().a == 0x43,
+              "multi-cycle instruction skips DMA bytes instead of executing traps");
+        check(bus.read8(0xC0FF) == (model == gameboy::HardwareModel::dmg ? 0x99 : 0x42),
+              "ROM-source DMA blocks DMG WRAM writes but permits CGB stack writes");
+    }
+}
+
 void test_hram_dma_return() {
     for (const auto model : {gameboy::HardwareModel::dmg, gameboy::HardwareModel::sgb,
                              gameboy::HardwareModel::sgb2, gameboy::HardwareModel::cgb_e}) {
@@ -320,6 +361,8 @@ void test_cgb_memory_and_rendering() {
 
 int main() {
     try {
+        test_dma_instruction_bus_and_stack();
+        test_ff74_native_and_compatibility();
         test_hram_dma_return();
         test_cgb_memory_and_rendering();
     } catch (const std::exception& error) {

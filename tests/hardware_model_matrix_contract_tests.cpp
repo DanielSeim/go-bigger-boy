@@ -71,16 +71,16 @@ constexpr std::array<ModelCase, 9> model_cases{{
      {0xFF, 0x00, 0x00, 0x14, 0x00, 0x00, 0xC0, 0x60}, 0xD8, 0, false,
      true, false},
     {gameboy::HardwareModel::cgb0, "CGB0",
-     {0x11, 0x80, 0x00, 0x00, 0x00, 0x08, 0x00, 0x7C}, 0x28, 0, true,
+     {0x11, 0x80, 0x00, 0x00, 0x00, 0x08, 0x00, 0x7C}, 0x20, 0, true,
      false, true},
     {gameboy::HardwareModel::cgb_c, "CGB-C",
-     {0x11, 0x80, 0x00, 0x00, 0x00, 0x08, 0x00, 0x7C}, 0x28, 0, true,
+     {0x11, 0x80, 0x00, 0x00, 0x00, 0x08, 0x00, 0x7C}, 0x1E, 0, true,
      false, true},
     {gameboy::HardwareModel::cgb_e, "CGB-E",
-     {0x11, 0x80, 0x00, 0x00, 0x00, 0x08, 0x00, 0x7C}, 0x26, 0, true,
+     {0x11, 0x80, 0x00, 0x00, 0x00, 0x08, 0x00, 0x7C}, 0x1E, 0, true,
      false, true},
     {gameboy::HardwareModel::cgb, "CGB alias",
-     {0x11, 0x80, 0x00, 0x00, 0x00, 0x08, 0x00, 0x7C}, 0x26, 0, true,
+     {0x11, 0x80, 0x00, 0x00, 0x00, 0x08, 0x00, 0x7C}, 0x1E, 0, true,
      false, true},
 }};
 
@@ -158,6 +158,64 @@ void test_explicit_profiles() {
     }
 }
 
+void test_color_boot_mode_phases() {
+    using gameboy::HardwareModel;
+    for (const auto model : {HardwareModel::cgb0, HardwareModel::cgb_c,
+                             HardwareModel::cgb_e, HardwareModel::agb0, HardwareModel::agb}) {
+        for (bool color : {false, true}) {
+            gameboy::Emulator emulator{gameboy::Cartridge{test_rom(color, false)}, model};
+            const bool early = model == HardwareModel::cgb0;
+            const bool agb = gameboy::is_agb_hardware(model);
+            const auto counter = color ? (early ? 0x20AC : agb ? 0x1EA4 : 0x1EA0)
+                                       : (early ? 0x2880 : agb ? 0x2678 : 0x2674);
+            check(emulator.bus().debug_divider_counter() == counter,
+                  "color boot divider depends on native versus compatibility mode");
+            check(emulator.bus().read8(0xFF44) == (color ? 144 : 148) &&
+                      emulator.bus().debug_ppu_dot() == (color ? (agb ? 172U : 168U) : (agb ? 360U : 356U)) &&
+                      emulator.bus().debug_ppu_mode() == 1,
+                  "color boot handoff is in the mode-specific VBlank phase");
+        }
+    }
+}
+
+void test_power_on_work_ram() {
+    for (const auto model : {gameboy::HardwareModel::dmg, gameboy::HardwareModel::cgb_e}) {
+        auto image = test_rom(gameboy::is_cgb_hardware(model), false);
+        gameboy::Emulator first{gameboy::Cartridge{image}, model};
+        gameboy::Emulator second{gameboy::Cartridge{image}, model};
+        bool mixed = false;
+        const auto initial = first.bus().read8(0xC000);
+        for (unsigned address = 0xC000; address < 0xE000; ++address) {
+            const auto byte = first.bus().read8(static_cast<std::uint16_t>(address));
+            mixed |= byte != 0 && byte != 255;
+            check(byte == second.bus().read8(static_cast<std::uint16_t>(address)),
+                  "power-on WRAM is reproducible across independent machines");
+        }
+        check(mixed, "undefined WRAM is not silently zero or FF filled");
+        first.bus().write8(0xC000, initial ^ 255);
+        first.reset();
+        check(first.bus().read8(0xC000) == (initial ^ 255), "soft reset retains cartridge WRAM");
+        first.bus().initialize_dmg_power_on();
+        check(first.bus().read8(0xC000) == initial, "cold reset recreates deterministic WRAM");
+    }
+}
+
+void test_monochrome_header_logo() {
+    for (const auto model : {gameboy::HardwareModel::dmg, gameboy::HardwareModel::mgb}) {
+        auto image = test_rom(false, false);
+        image[0x104] = 0xA5;
+        gameboy::Emulator emulator{gameboy::Cartridge{image}, model};
+        constexpr std::array<std::uint8_t, 8> expected{0xCC, 0, 0xCC, 0, 0x33, 0, 0x33, 0};
+        for (unsigned i = 0; i < expected.size(); ++i)
+            check(emulator.bus().debug_read_vram(0, 0x10 + i) == expected[i],
+                  "monochrome boot tiles derive from cartridge header pixels");
+        check(emulator.bus().debug_read_vram(0, 0x1904) == 1 &&
+                  emulator.bus().debug_read_vram(0, 0x1910) == 25 &&
+                  emulator.bus().debug_read_vram(0, 0x1924) == 13,
+              "monochrome boot map retains both logo rows and trademark position");
+    }
+}
+
 void test_automatic_selection() {
     gameboy::Emulator dmg{gameboy::Cartridge{test_rom(false, false)}};
     check(!dmg.bus().cgb_mode() && dmg.bus().read8(0xFF00) == 0xCF,
@@ -215,6 +273,9 @@ void test_public_model_catalog() {
 int main() {
     try {
         test_explicit_profiles();
+        test_color_boot_mode_phases();
+        test_power_on_work_ram();
+        test_monochrome_header_logo();
         test_automatic_selection();
         test_public_model_catalog();
     } catch (const std::exception& error) {

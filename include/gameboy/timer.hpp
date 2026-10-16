@@ -25,7 +25,7 @@ public:
     void write_control(std::uint8_t value,
                        bool cpu_bus_cycle = false) noexcept;
     void set_double_speed(bool enabled) noexcept;
-    void initialize_post_boot(HardwareModel model) noexcept;
+    void initialize_post_boot(HardwareModel model, bool cgb_mode = false) noexcept;
 
     // Returns true when TIMA reload requests the timer interrupt.
     [[nodiscard]] bool tick(unsigned cycles) noexcept;

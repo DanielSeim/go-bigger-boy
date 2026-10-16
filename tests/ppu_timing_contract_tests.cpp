@@ -637,7 +637,7 @@ void test_oam_dma() {
     gameboy::Cpu startup_cpu;
     check(startup_cpu.step(startup) == 8 &&
               startup_cpu.registers().pc == 0x0102 &&
-              startup_cpu.registers().a == 0xFF,
+              startup_cpu.registers().a == 0,
           "fresh DMA permits the first CPU cycle before blocking the bus");
 
     gameboy::MemoryBus video_dma{
@@ -652,6 +652,7 @@ void test_oam_dma() {
 
     gameboy::MemoryBus split_buses{gameboy::Cartridge{test_rom()}};
     split_buses.write8(0x8000, 0x66);
+    split_buses.write8(0x8004, 0x5A);
     split_buses.write8(0xFF80, 0xFA); // LD A,(8000), executing from HRAM.
     split_buses.write8(0xFF81, 0x00);
     split_buses.write8(0xFF82, 0x80);
@@ -662,7 +663,7 @@ void test_oam_dma() {
     split_registers.pc = 0xFF80;
     split_cpu.load_registers(split_registers);
     check(split_cpu.step(split_buses) == 16 &&
-              split_cpu.registers().a == 0xFF,
+              split_cpu.registers().a == 0x5A,
           "VRAM-source DMA blocks CPU accesses to the video bus");
 
     split_buses.write8(0xFF46, 0xC0);
@@ -677,6 +678,7 @@ void test_oam_dma() {
     gameboy::MemoryBus blocked{gameboy::Cartridge{test_rom()}};
     blocked.write8(0xC000, 0x42);
     blocked.write8(0xC100, 0x24);
+    blocked.write8(0xC102, 0x33);
     blocked.write8(0xD000, 0x99);
     blocked.write8(0xFF80, 0xFA); // LD A,(C000), executing from HRAM.
     blocked.write8(0xFF81, 0x00);
@@ -694,8 +696,8 @@ void test_oam_dma() {
     auto registers = cpu.registers();
     registers.pc = 0xFF80;
     cpu.load_registers(registers);
-    check(cpu.step(blocked) == 16 && cpu.registers().a == 0xFF,
-          "OAM DMA blocks CPU reads outside high RAM");
+    check(cpu.step(blocked) == 16 && cpu.registers().a == 0x33,
+          "OAM DMA drives contending CPU reads with the current source byte");
     registers = cpu.registers();
     registers.a = 0xD0;
     cpu.load_registers(registers);

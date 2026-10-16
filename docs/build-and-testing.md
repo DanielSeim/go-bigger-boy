@@ -596,9 +596,78 @@ suffixes, incomplete screens, opt-in behavior and capture-mode isolation. They
 are registered as `gameboy_bullygb_protocol`; external discovery/hash/protocol
 contracts remain in `gameboy_external_suite_harness`.
 
-Local validation of the pinned unmodified v1.2 ROM found six aggregate failures:
-DMG/MGB report `Uninitialized RAM not randomized`; CGB0/CGB-C/CGB-E/AGB report
-`Invalid initial   DIV`. Every run reached an explicit terminal error, rather
-than timing out. These are baseline observations with the default startup
-profiles, not exemptions or complete subtest coverage. Emulator startup behavior
-was left unchanged by the suite integration.
+The initial integration found six aggregate failures: DMG/MGB rejected cleared
+WRAM; color profiles rejected the native CGB initial DIV. Follow-up fixes now
+produce **five passes** (DMG, MGB, CGB-C, CGB-E, AGB) and **one retained CGB0
+reference disagreement**. No tests or failure signatures are bypassed.
+
+The corrections cover:
+
+- Deterministic nonuniform WRAM at machine power-on, using a fixed PRNG seed
+  without OS entropy. It approximates undefined memory, not measured SRAM-cell
+  patterns. Cartridge battery RAM, HRAM and VRAM have separate contracts. Soft
+  post-boot reset retains WRAM; cold boot recreates the same contents. Save-state
+  format and replay determinism are preserved. Test guests must initialize their
+  ISR counters rather than relying on zero-filled memory.
+- Mode-dependent native CGB versus monochrome-compatibility boot divider and LCD
+  phase, with AGB's four-cycle handoff offset. Native CGB0 retains its distinct
+  divider; this is not changed to satisfy a later-CGB expectation.
+- DMG/MGB post-boot logo tiles decoded from the loaded cartridge header, plus
+  the two logo-map rows and existing trademark. No fixed cartridge logo artwork
+  is added to the repository.
+- FF74's fully writable native-CGB register, initially zero; it remains FF and
+  read-only outside CGB mode.
+- OAM DMA reads drive the contending CPU bus with the current source byte,
+  including instruction fetches and stack reads. CGB cartridge and WRAM buses
+  are independent, so ROM DMA permits WRAM stack access. DMG main-bus writes
+  remain blocked. Raw/debug reads remain unrestricted, and DMA state uses the
+  existing source/index fields without a save-format change.
+
+Independent validation used pinned SameBoy 1.0.3
+(`208ba4afabffab9edde416f2dbb8ae459e34adb8`) with privately supplied original
+boot images strictly as execution-only black boxes. Unmodified BullyGB v1.2
+passes in DMG/MGB/CGB-C/CGB-E/AGB there too. CGB0 reads DIV=21 at its test while
+BullyGB expects 1F for every CGB revision, and fails identically in the reference.
+Thus the remaining CGB0 row is an upstream applicability disagreement, not an
+expected-failure override. Original images and generated ROMs are not committed.
+
+A JP/NOP observer fixture retaining the BullyGB header brackets native DIV and
+LCD-line edges via public execution callbacks and read-only IO. Native color
+handoff counters are 20AC for CGB0, 1EA0 for CGB-C/E and 1EA4 for AGB; handoff
+is at internal line 144, dot 168 (172 on AGB). The established monochrome
+compatibility divider expectations remain covered separately by Mooneye. These
+are boot/profile observations, not physical-hardware measurements or a general
+claim of exact boot timing for arbitrary headers.
+
+Private boot-image SHA-256 provenance:
+
+| Profile | Boot image SHA-256 |
+| --- | --- |
+| DMG | `cf053eccb4ccafff9e67339d4e78e98dce7d1ed59be819d2a1ba2232c6fce1c7` |
+| MGB | `a8cb5f4f1f16f2573ed2ecd8daedb9c5d1dd2c30a481f9b179b5d725d95eafe2` |
+| CGB0 | `3a307a41689bee99a9a32ea021bf45136906c86b2e4f06c806738398e4f92e45` |
+| CGB-C | `b4f2e416a35eef52cba161b159c7c8523a92594facb924b3ede0d722867c50c7` |
+| CGB-E | `c56299bedd56debdbf36442238636bf5887a65c5173b33995682052353804da9` |
+| AGB | `fe3cceb79930c4cb6c6f62f742c2562fd4c96b827584ef8ea89d49b387bd6860` |
+
+Thirteen pinned Mooneye boot/DIV/IO/VBlank executions pass: DMG/MGB boot DIV,
+CGB0/CGB-C/CGB-E boot DIV, CGB IO and VBlank/STAT, and AGB/AGB0 boot DIV. A further 32 OAM-DMA executions pass across the six
+BullyGB profiles (basic, register read, restart, startup and finish timing; the
+model-restricted source test is run only on DMG/MGB). These external tests are
+built from Mooneye `31510e12eea6286d36eea060a6adde755e1067aa` with WLA-DX
+`7ae11df1657dafab1f5fa662889d005709fec15e`. All 16 selected firmware, CPU,
+timer, PPU, model, save-state and integration CTest contracts pass. Authored
+native contracts cover nonuniform/reproducible WRAM, reset retention, color boot
+mode phases, header-logo expansion, FF74 access and DMA-driven instruction/stack
+cycles. The existing DMA/save-state and firmware lifecycle tests also apply.
+
+To run the optional pinned BullyGB aggregate regression locally:
+
+```sh
+GBB_TEST_RUNNER=./build/gbb_test_runner \
+GBB_BULLYGB_ROM_DIR=/external/test-roms/bullygb \
+  python3 tests/external_suite_tests.py
+```
+
+The test requires the exact pinned ROM hash and checks all five supported
+aggregate passes while retaining the independently observed CGB0 mismatch.

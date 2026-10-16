@@ -6,9 +6,10 @@
 
 namespace gameboy {
 
-void Timer::initialize_post_boot(const HardwareModel model) noexcept {
+void Timer::initialize_post_boot(const HardwareModel model, const bool cgb_mode) noexcept {
     // Boot ROM revisions hand control to the cartridge at different phases of
-    // the free-running system divider.
+    // the free-running system divider. Native color and monochrome
+    // compatibility cartridges take different final boot paths.
     switch (model) {
     case HardwareModel::dmg0: divider_counter_ = 0x182C; break;
     case HardwareModel::sgb: divider_counter_ = 0xD85C; break;
@@ -16,12 +17,16 @@ void Timer::initialize_post_boot(const HardwareModel model) noexcept {
     case HardwareModel::automatic:
     case HardwareModel::dmg:
     case HardwareModel::mgb: divider_counter_ = 0xABC8; break;
-    case HardwareModel::cgb0:
-    case HardwareModel::cgb_c: divider_counter_ = 0x2880; break;
+    case HardwareModel::cgb0: divider_counter_ = cgb_mode ? 0x20AC : 0x2880; break;
+    case HardwareModel::cgb_c:
     case HardwareModel::cgb:
     case HardwareModel::agb0:
     case HardwareModel::agb:
-    case HardwareModel::cgb_e: divider_counter_ = 0x2674; break;
+    case HardwareModel::cgb_e: {
+        const auto base = cgb_mode ? 0x1EA0 : 0x2674;
+        divider_counter_ = static_cast<std::uint16_t>(base + (is_agb_hardware(model) ? 4 : 0));
+        break;
+    }
     }
 }
 

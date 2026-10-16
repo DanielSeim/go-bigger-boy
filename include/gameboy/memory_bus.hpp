@@ -36,6 +36,8 @@ public:
     };
 
     explicit MemoryBus(Cartridge cartridge);
+    // Reproducible undefined power-on WRAM; no OS entropy or cartridge RAM.
+    void initialize_work_ram_power_on() noexcept;
     void initialize_post_boot(HardwareModel model = HardwareModel::dmg) noexcept;
     // Deterministic DMG power-on state: no post-boot register/VRAM seeding.
     // Cartridge/mapper/battery data and host serial attachment are retained.

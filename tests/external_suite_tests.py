@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import hashlib
+import os
 import subprocess
 from unittest.mock import patch
 from pathlib import Path
@@ -138,6 +139,25 @@ class ExternalSuiteDiscoveryTests(unittest.TestCase):
         self.assertEqual(
             MODULE.failure_cluster(make_case("same-suite", "apu_channel_2_x")),
             "apu/channel_2")
+
+
+@unittest.skipUnless(os.environ.get('GBB_TEST_RUNNER') and os.environ.get('GBB_BULLYGB_ROM_DIR'),
+                     'set GBB_TEST_RUNNER and GBB_BULLYGB_ROM_DIR for the pinned external ROM')
+class BullyGBNativeTests(unittest.TestCase):
+    def test_aggregate_results_on_supported_profiles(self):
+        config = MANIFEST['suites']['bullygb']
+        cases = MODULE.bullygb_cases(Path(os.environ['GBB_BULLYGB_ROM_DIR']), config)
+        self.assertTrue(all(c.status == 'pending' for c in cases), 'requires exact pinned ROM hash')
+        with tempfile.TemporaryDirectory() as tmp:
+            for case in cases:
+                result = MODULE.run_case(case, Path(os.environ['GBB_TEST_RUNNER']).resolve(), Path(tmp))
+                if case.model == 'cgb0':
+                    # The same failure is independently observed with original
+                    # CGB0 boot + pinned SameBoy. Do not falsify that revision.
+                    self.assertEqual(result.status, 'fail')
+                    self.assertIn('Invalid initial   DIV', result.detail)
+                else:
+                    self.assertEqual(result.status, 'pass', result.detail)
 
 
 if __name__ == "__main__":
