@@ -1381,6 +1381,19 @@ if(GAMEBOY_BUILD_TESTS)
                 --probe $<TARGET_FILE:gameboy_sgb_vendor_music_probe>
                 --timeline-probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>)
         set_tests_properties(gameboy_sgb_score_vendor_reply PROPERTIES TIMEOUT 900 COST 300)
+        add_test(NAME gameboy_sgb_vendor_startup_phase_contract
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_startup_phase_tests.py
+                StartupPhaseContracts.test_startup_decomposition_and_ambiguity
+                StartupPhaseContracts.test_age_calibration_ignores_waits_and_bounds_fixtures
+                StartupPhaseContracts.test_phase_checks_and_corpus_identity
+                StartupPhaseContracts.test_cli_scope_fitting_disclosure_and_failures)
+        add_test(NAME gameboy_sgb_score_vendor_startup_phase
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_startup_phase_tests.py
+                --timeline-probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>
+                --probe $<TARGET_FILE:gameboy_sgb_vendor_music_probe>
+                StartupPhaseContracts.test_native_adjusted_controls
+                StartupPhaseContracts.test_native_transparency_and_replay)
+        set_tests_properties(gameboy_sgb_score_vendor_startup_phase PROPERTIES TIMEOUT 900 COST 450)
         add_test(NAME gameboy_sgb_vendor_publication_retry_contract
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_publication_retry_tests.py
                 PublicationRetryContracts.test_scope_and_holdouts
@@ -1564,6 +1577,12 @@ if(GAMEBOY_BUILD_TESTS)
                     --selection-spin 0 --selection-spin 1536 --timer-results)
             set_tests_properties(gameboy_sgb_vendor_selection_arrival_holdout_local_reference
                 PROPERTIES TIMEOUT 2400 LABELS "local;private-reference")
+            add_test(NAME gameboy_sgb_vendor_startup_phase_local_reference
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_vendor_startup_phase_reference.py
+                    --probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>
+                    --firmware-dir "${CMAKE_CURRENT_SOURCE_DIR}/roms")
+            set_tests_properties(gameboy_sgb_vendor_startup_phase_local_reference
+                PROPERTIES TIMEOUT 1800 LABELS "local;private-reference")
             add_test(NAME gameboy_sgb_vendor_publication_retry_local_reference
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_sgb_vendor_publication_retry_reference.py
                     --probe $<TARGET_FILE:gameboy_sgb_music_timeline_probe>

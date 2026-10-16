@@ -323,3 +323,14 @@ differ by about 12 ms, all with different prior score states, while the eight
 frozen SGB2 retry anchors pass. The optional private CTest therefore returns
 failure (exit 1, complete report); public owned matrices and short contracts
 remain passing. Do not mark this private gate `WILL_FAIL` or waive its comparisons.
+
+The [startup and phase comparison](sgb-vendor-startup-phase.md) adds
+`gameboy_sgb_score_vendor_startup_phase` (timeout 900 seconds, cost 450), bringing
+public discovery to 100 matrices. It covers 32 adjusted owned fixtures, eight
+observer-transparency pairs and eight native/scalar reset/save-load pairs. Four
+short methods in `gameboy_sgb_vendor_startup_phase_contract` check startup anchor
+decomposition, age-only schedule calibration, payload/identity preservation,
+ambiguous boundaries, independent phase guards and CLI exits 0/1/2. The optional
+`gameboy_sgb_vendor_startup_phase_local_reference` runs six calibration and 64
+paired original/replacement captures, timeout 1800, labels `local;private-reference`.
+Unaligned timing matches remain inconclusive and cannot make this gate pass.

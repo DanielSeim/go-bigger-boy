@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Decompose SGB first-selection startup and add age-calibrated fixture scheduling
+  with independent pre-request playback witnesses; preserve existing compatibility
+  failures and report unaligned timing comparisons as inconclusive.
+
 - Add a direct SGB original/replacement publication-and-retry gate with new
   holdout schedules, explicit handoff differences and prior-playback-state
   diagnostics; report wait mismatches without qualifying timing parity.

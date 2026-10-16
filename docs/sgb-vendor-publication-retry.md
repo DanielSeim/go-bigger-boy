@@ -129,9 +129,9 @@ Public discovery includes all 99 matrices exactly once and excludes the private
 gate. Syntax and whitespace checks pass. Normal and opt-in firmware image hashes
 remain unchanged. No production timing, port behavior or default is changed.
 
-The next target is to compare first-selection directory/root/first-KON timing and
-establish independently checked preceding playback-phase witnesses before testing
-acceptance parity. Preserve these seven failures as the end-to-end regression
-cases; add a separate phase-controlled comparison rather than waiving their
-failures, enlarging tolerance, or fitting the existing wait table to different
-starting score states.
+The [startup/phase follow-up](sgb-vendor-startup-phase.md) now decomposes
+first-selection directory/root/first-KON timing and calibrates fixture request
+scheduling using separate unchanged-tempo age witnesses. It independently checks
+preceding playback state before comparing waits. These seven same-schedule
+failures remain active; the new experiment does not waive them, enlarge their
+tolerance or fit a firmware wait table to different starting states.
