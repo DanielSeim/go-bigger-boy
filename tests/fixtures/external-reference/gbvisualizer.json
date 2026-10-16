@@ -1,0 +1,11 @@
+{
+  "project": "GBVisualizer",
+  "repository": "https://github.com/LIJI32/GBVisualizer",
+  "commit": "1649f3e7a9516701cf448c4529f8f119363fc713",
+  "rgbds_version": "v1.0.1",
+  "rom_sha256": "fa59a6a8f1ec0c1ab8dac8d99c9d4cf4c8260008fd2b2809fa0506ef9866e180",
+  "rom_size": 32768,
+  "distribution": "external-only; source, music and ROM are not bundled",
+  "adaptation": "DEF EQU syntax; explicit LDH C; absolute LDH addresses; zero-pad header-declared 32 KiB",
+  "sameboy_commit": "208ba4afabffab9edde416f2dbb8ae459e34adb8"
+}

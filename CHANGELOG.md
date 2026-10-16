@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add opt-in pinned GBVisualizer build tooling and a CGB SameBoy capture adapter,
+  with offline contracts and optional native tests; keep external assets and
+  unqualified cross-emulator captures outside the repository.
+
 - Package the downloadable Web release as `go-bigger-boy-web.zip`, including
   all site files and assets; retain the existing GitHub Pages deployment.
 

@@ -1,9 +1,10 @@
 # GBVisualizer reference candidate
 
 [LIJI32/GBVisualizer](https://github.com/LIJI32/GBVisualizer) is an external CGB
-integration/reference candidate. It is **not currently a registered regression
-gate**: no upstream checkout, ROM, music, screenshot baseline or SameBoy capture
-has been added, built or validated as part of this documentation change.
+integration/reference candidate. A pinned external build and a dedicated SameBoy
+CGB capture adapter are available for opt-in research. It is **not a qualified
+pixel regression gate**. Upstream source, music, ROMs and screenshots remain
+external; the offline tool contracts run without them.
 
 ## Useful coverage
 
@@ -35,12 +36,25 @@ Keep this candidate external; establish applicable permissions before considerin
 vendoring source, music, ROMs or derived reference assets. No automatic download
 or new public-CI dependency is introduced here.
 
-For a future opt-in run, record the exact upstream commit, RGBDS version, build
-command, any local build-only changes, final ROM SHA-256, GBB commit and reference
-emulator revision. The [Makefile](https://github.com/LIJI32/GBVisualizer/blob/master/Makefile)
-uses RGBDS and an `itt.py` music conversion step; compatibility with the selected
-current toolchain must be tested, not assumed. An unidentified ROM or a mutable
-branch name is insufficient for a reproducible golden baseline.
+The metadata pin is `tests/fixtures/external-reference/gbvisualizer.json`:
+upstream commit `1649f3e7a9516701cf448c4529f8f119363fc713`, RGBDS `v1.0.1`,
+32,768-byte ROM SHA-256
+`fa59a6a8f1ec0c1ab8dac8d99c9d4cf4c8260008fd2b2809fa0506ef9866e180`.
+The builder requires a clean tracked checkout and all three exact tool versions,
+uses temporary copies, and rejects unexpected ROM hashes. Supply your own checkout:
+
+```sh
+python3 scripts/build_gbvisualizer_reference.py \
+  --source /external/GBVisualizer --output /external/gbvisualizer-built
+```
+
+The output directory must be new. It contains the ROM and a manifest recording
+input hashes, commands, adaptations and versions. The builder adds modern `DEF`
+syntax, makes indirect `LDH` explicit, and expands HRAM offsets to absolute
+addresses. `rgbfix -p 0` pads the linker output to the header-declared 32 KiB.
+It uses the supplied `music.gbm` without running the legacy music converter.
+Two clean builds produced identical ROMs. This establishes reproducibility with
+the pinned modern toolchain, not byte equivalence with an unidentified older build.
 
 ## Initial GBB captures
 
@@ -48,7 +62,7 @@ For a locally supplied and pinned `visualizer.gbc`, the existing headless runner
 can produce bounded screenshots without SDL:
 
 ```sh
-./build/gbb_test_runner /path/to/visualizer.gbc --model cgb-e \
+./build/gbb_test_runner /path/to/visualizer.gbc --model cgb-e --dmg-boot \
   --frames 600 --max-cycles 120000000 --frame-output gbvisualizer-600.ppm
 ```
 
@@ -72,12 +86,74 @@ reference color correction and use comparable raw RGB output for pixel tests.
 Define whether a checkpoint means a completed PPU frame or a fixed elapsed
 hardware duration; CPU-cycle counts alone are not speed-normalized.
 
-The existing `scripts/sameboy_sgb_capture.c` selects SGB/SGB2 and is **not** a CGB
-reference producer. A dedicated adapter using SameBoy's public Core API, or an
-explicitly reviewed CGB extension, is required before this becomes an automated
-cross-emulator gate. Record startup differences rather than silently shifting
-frames until screenshots match. An upstream example screenshot is useful for
-orientation, not an exact frame-600 oracle.
+`scripts/sameboy_cgb_capture.c` is a separate public-Core-API adapter for SameBoy
+v1.0.3, commit `208ba4afabffab9edde416f2dbb8ae459e34adb8` (the existing audio
+reference pin). Build SameBoy's library externally, verify that checkout revision,
+then compile the adapter (Linux example):
+
+```sh
+make -C /external/SameBoy lib CONF=release
+cc -std=c11 -Wall -Wextra -Werror -I/external/SameBoy \
+  scripts/sameboy_cgb_capture.c -L/external/SameBoy/build/lib \
+  -Wl,-rpath,/external/SameBoy/build/lib -lsameboy -lm -ldl \
+  -o /external/sameboy-cgb-capture
+python3 scripts/build_dmg_boot_rom.py --model cgb --output /external/cgb-boot.bin
+/external/sameboy-cgb-capture /external/gbvisualizer-built/visualizer.gbc \
+  /external/cgb-boot.bin 600 /external/sameboy-600.ppm cgb-e 200000000
+```
+
+Use GBB's `--dmg-boot` as shown above: despite its historic name, it selects the
+bundled replacement boot for CGB too. The exported original GBB fast CGB boot
+is the same image (SHA-256
+`c8937124cd7dcafc036dcad3ad46008ea57b4e76abfa3da6012ff8bdbd7687d0`).
+Record the GBB revision and adapter/library build provenance with local results.
+
+The adapter supports `cgb-e` (default), `cgb-c` and `cgb0`; it fixes random seed 0,
+disables color correction and borders, and writes raw 160×144 RGB PPM. It counts
+only normal VBlank callbacks, starting from boot; artificial LCD-off/repeat
+callbacks are reported separately. Its watchdog uses SameBoy's **8 MHz clocks**,
+not GBB CPU T-cycles. A watchdog failure returns 1 without writing a capture;
+argument errors return 2 and load/output errors return 4. Existing output files
+are never overwritten. Successful metadata is JSON on stdout; Core logs go to
+stderr. The existing SGB adapter is unchanged.
+
+Run the offline contracts, or additionally exercise the compiled adapter using
+only an independently authored synthetic ROM and GBB's owned boot:
+
+```sh
+python3 tests/gbvisualizer_reference_tools_tests.py
+GBB_SAMEBOY_CGB_CAPTURE=/external/sameboy-cgb-capture \
+  python3 tests/gbvisualizer_reference_tools_tests.py
+```
+
+These check adaptation, provenance rejection, fail-closed hash validation,
+deterministic capture, normal versus artificial frame counting, LCD-off timeout,
+argument/load errors and preservation of existing captures. Public CTest registers
+the offline contract; native tests are opt-in and require no upstream demo assets.
+
+Record startup differences rather than silently shifting frames until screenshots
+match. An upstream example screenshot is useful for orientation, not an exact
+frame-600 oracle.
+
+## Initial local evidence (2026-10-16)
+
+Using the pins above, GBB base revision `0229245`, CGB-E and the shared owned
+fast boot, two runs per emulator at each checkpoint produced identical RGB bytes
+within that emulator. Every capture had four distinct colors, and both displays
+changed across checkpoints. Exact cross-emulator comparisons differed:
+
+| Completed PPU frames | Different pixels (of 23,040) | SameBoy 8 MHz clocks | Artificial callbacks |
+| --- | --- | --- | --- |
+| 60 | 2,160 | 17,352,412 | 65 |
+| 300 | 2,520 | 51,059,932 | 65 |
+| 600 | 3,914 | 93,194,332 | 65 |
+
+These are local research observations, not redistributed screenshot baselines or
+hardware validation. A shared boot image alone does not establish identical
+startup timing. Next isolate startup/capture alignment with independently authored
+LCD/VBlank and PCM sampling probes before diagnosing the demo's pixel differences
+or promoting any output to a required regression gate. No arbitrary frame offset
+has been applied.
 
 Keep three results separate: GBB's own deterministic screenshot regression,
 GBB-versus-SameBoy frame/PCM behavior, and audio waveform comparison. In

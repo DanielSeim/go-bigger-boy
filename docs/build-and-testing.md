@@ -314,9 +314,10 @@ promoted to the `required` gate.
 
 GBVisualizer is documented as an [external CGB reference candidate](gbvisualizer-reference.md)
 for PCM12/PCM34, double-speed, timer and scanline integration. It is not yet a
-registered gate or bundled test ROM; the guide records provenance and SameBoy
-capture requirements, including the distinction between CPU-cycle and PPU-frame
-checkpoints at double speed.
+qualified pixel gate or bundled test ROM. The guide includes a pinned external
+builder, CGB SameBoy capture adapter and opt-in native tests, plus the distinction
+between CPU-cycle and PPU-frame checkpoints at double speed. The offline tooling
+contract is registered as `gameboy_gbvisualizer_reference_tools_contract`.
 
 ## Hardware-model matrix
 
