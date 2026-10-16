@@ -116,6 +116,23 @@ not GBB CPU T-cycles. A watchdog failure returns 1 without writing a capture;
 argument errors return 2 and load/output errors return 4. Existing output files
 are never overwritten. Successful metadata is JSON on stdout; Core logs go to
 stderr. The existing SGB adapter is unchanged.
+
+Rebuilt adapters also support the read-only mode
+`--pc-clock-window ROM BOOT START_PC END_PC [MODEL] [MAX_8MHZ_CLOCKS]`.
+PCs accept C-style numeric addresses, including `0x1000`; the two addresses
+must differ. The default limit is 20 million 8-MHz clocks. JSON reports the
+first start callback and first subsequent end callback, keyed IO/register
+witnesses, and up to eight callback records with PC/opcode/BC/clock values.
+It marks truncation explicitly and never writes a full CPU trace. Clock stamps
+are the accumulated `GB_run` results before the call containing the callback;
+they are API-call boundaries, not direct opcode-fetch timestamps. The public
+[pinned Core header](https://github.com/LIJI32/SameBoy/blob/208ba4afabffab9edde416f2dbb8ae459e34adb8/Core/gb.h#L911)
+defines those results as 8-MHz ticks. Exit 0 means both callbacks were reached,
+not that a hardware test passed; missing boundaries/timeouts return 3, argument
+errors 2, and load errors 4. Every result keeps `qualification=false`.
+Frame capture and `--mooneye` behavior are unchanged. See the authored
+STOP instruction timing probe in [build and testing](build-and-testing.md).
+
 An optional final positional argument after the clock budget writes exactly 8 KiB
 of CPU-visible WRAM (`C000`–`DFFF`) using read-only public API accesses. The new
 snapshot is created exclusively; if it fails, the new PPM is removed and exit 4

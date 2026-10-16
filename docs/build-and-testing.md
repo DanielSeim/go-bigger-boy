@@ -808,3 +808,26 @@ output creation. `gameboy_cgb_stop_apu_probe_contract` runs offline. Set
 `GBB_TEST_RUNNER` and `GBB_SAMEBOY_CGB_CAPTURE` for the full native matrix in
 `tests/cgb_stop_apu_probe_tests.py`. Known differences are not required to
 persist; no-switch parity and post-switch channel-start PCM parity are checked.
+
+`scripts/cgb_stop_timing_probe.py` measures a single operation and resumed
+instruction, without relying on frame callbacks or seeing only a PC advance
+before a pause ends. Rebuild the pinned reference adapter to add
+`--pc-clock-window`, then use `--runner`, `--sameboy-capture`, and a fresh
+`--output`. Its 20 cases combine both CPU speeds, switch/NOP operations and
+active/armed/powered-off APU states, with additional `INC B` and two-cycle
+`LD B,11` resume controls. GBB uses its existing first-PC witnesses and explicit
+Mooneye completion; reference observations use bounded public-API callbacks.
+Two takes at each boundary verify repeatability. The report includes separate
+CPU T-cycle and 8-MHz clock fields, callback/register witnesses, commands and
+executable/ROM hashes. Reference calibration includes the first resume callback,
+completion of that instruction, and the subsequent steady NOP boundary.
+
+The GBB conversion to 8-MHz clocks states its current atomic-STOP partition
+assumption explicitly; it must be replaced with direct normalized clock
+instrumentation when implementing a staged transition. Timing or register
+disagreements return 1, malformed/incomplete witnesses return 2, and successful
+comparisons retain `qualification=false`. `gameboy_cgb_stop_timing_probe_contract`
+runs offline. Set `GBB_TEST_RUNNER` and `GBB_SAMEBOY_CGB_CAPTURE` (the rebuilt
+adapter) to run the full native matrix and invalid-argument/timeout checks in
+`tests/cgb_stop_timing_probe_tests.py`. Existing adapter capture/protocol modes
+also have native regression coverage.

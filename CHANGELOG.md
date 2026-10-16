@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Measure single STOP/resume instruction windows against pinned SameBoy with
+  bounded callback histories, NOP calibration and INC/LD register-effect
+  controls. Record the missing switch interval and first-resume timing gap
+  without changing CPU/APU timing or existing capture modes.
+
 - Add STOP/APU clock witnesses with active, untriggered and powered-off APU
   controls at two pulse periods and both CPU speeds. Separate the observed
   switch-time TIMA discrepancy from active-channel PCM phase differences;

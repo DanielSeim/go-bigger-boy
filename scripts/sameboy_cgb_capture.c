@@ -3,6 +3,7 @@
  * ROM BOOT_ROM FRAMES OUTPUT.ppm [cgb-e|cgb-c|cgb0] [MAX_8MHZ_CLOCKS] [WRAM_OUTPUT]
  * Counts actual VBlanks; artificial LCD-off/repeat callbacks never advance N.
  * Or: --mooneye ROM BOOT_ROM [cgb-e|cgb-c|cgb0] [MAX_8MHZ_CLOCKS]
+ * Or: --pc-clock-window ROM BOOT_ROM START_PC END_PC [MODEL] [MAX_8MHZ_CLOCKS]
  */
 #include "Core/gb.h"
 #include "Core/display.h"
@@ -90,8 +91,109 @@ static int mooneye(int argc, char **argv) {
 done:
     GB_free(gb);GB_dealloc(gb);return result;
 }
+
+static uint64_t window_clocks, window_entry, window_exit;
+static uint16_t window_start_pc, window_end_pc;
+static unsigned window_entry_opcode, window_exit_opcode;
+static unsigned window_entry_io[4], window_exit_io[4];
+static unsigned window_entry_bc, window_exit_bc, window_records;
+static uint64_t window_callback_count;
+static struct { uint16_t pc,bc; uint8_t opcode; uint64_t clocks; } window_trace[8];
+static int window_started, window_finished;
+static void window_instruction(GB_gameboy_t *gb, uint16_t address, uint8_t opcode) {
+    const int already_finished=window_finished;
+    unsigned *io=NULL;
+    if (!window_started && address==window_start_pc) {
+        window_started=1;window_entry=window_clocks;window_entry_opcode=opcode;
+        window_entry_bc=GB_get_registers(gb)->bc;
+        io=window_entry_io;
+    }
+    else if (window_started && !window_finished && address==window_end_pc) {
+        window_finished=1;window_exit=window_clocks;window_exit_opcode=opcode;
+        window_exit_bc=GB_get_registers(gb)->bc;
+        io=window_exit_io;
+    }
+    if (io) {
+        io[0]=GB_read_memory(gb,0xFF4D);io[1]=GB_read_memory(gb,0xFF04);
+        io[2]=GB_read_memory(gb,0xFF05);io[3]=GB_read_memory(gb,0xFF76);
+    }
+    if (window_started && !already_finished) {
+        ++window_callback_count;
+        if (window_records<8) {
+            window_trace[window_records].pc=address;
+            window_trace[window_records].opcode=opcode;
+            window_trace[window_records].clocks=window_clocks;
+            window_trace[window_records].bc=GB_get_registers(gb)->bc;
+            ++window_records;
+        }
+    }
+}
+static int pc_number(const char *text, uint16_t *value) {
+    if (!*text || *text<'0' || *text>'9') return 0;
+    char *end;errno=0;
+    unsigned long n=strtoul(text,&end,0);
+    if (errno || *end || n>65535) return 0;
+    *value=(uint16_t)n;return 1;
+}
+static int pc_clock_window(int argc, char **argv) {
+    if (argc<6 || argc>8 || !pc_number(argv[4],&window_start_pc) ||
+        !pc_number(argv[5],&window_end_pc) || window_start_pc==window_end_pc) return 2;
+    const char *name=argc>=7?argv[6]:"cgb-e";
+    GB_model_t model;
+    uint64_t limit=20000000;
+    if (!model_from_name(name,&model) ||
+        (argc==8 && !number(argv[7],UINT64_C(2000000000),&limit))) return 2;
+    GB_random_seed(0);
+    GB_gameboy_t *gb=GB_alloc();
+    if (!gb) return 3;
+    if (!GB_init(gb,model)) { GB_dealloc(gb);return 3; }
+    GB_set_log_callback(gb,log_message);
+    int result=4;
+    uint32_t pixels[160*144]={0};
+    if (GB_load_boot_rom(gb,argv[3]) || GB_load_rom(gb,argv[2])) goto done;
+    GB_debugger_set_disabled(gb,true);
+    GB_set_border_mode(gb,GB_BORDER_NEVER);
+    GB_set_color_correction_mode(gb,GB_COLOR_CORRECTION_DISABLED);
+    GB_set_rgb_encode_callback(gb,rgb);
+    GB_set_pixels_output(gb,pixels);
+    GB_set_turbo_mode(gb,true,true);
+    GB_set_turbo_cap(gb,0);
+    GB_set_execution_callback(gb,window_instruction);
+    unsigned zero_steps=0;
+    while (!window_finished && window_clocks<limit) {
+        unsigned step=GB_run(gb);
+        if (!step && ++zero_steps>1024) { result=3;goto done; }
+        if (step) zero_steps=0;
+        window_clocks+=step;
+    }
+    printf("{\"schema\":\"gbb-sameboy-pc-clock-window-v1\",\"qualification\":false,"
+           "\"model\":\"%s\",\"result\":\"%s\","
+           "\"anchor\":\"gb_run_call_before_instruction_callback\","
+           "\"start_pc\":%u,\"end_pc\":%u,\"entry_seen\":%s,\"exit_seen\":%s,"
+           "\"entry_8mhz_clocks\":%" PRIu64 ",\"exit_8mhz_clocks\":%" PRIu64 ","
+           "\"elapsed_8mhz_clocks\":%" PRIu64 ",\"entry_opcode\":%u,\"exit_opcode\":%u,"
+           "\"entry_key1\":%u,\"exit_key1\":%u,\"entry_div\":%u,\"exit_div\":%u,"
+           "\"entry_tima\":%u,\"exit_tima\":%u,\"entry_pcm12\":%u,\"exit_pcm12\":%u,"
+           "\"entry_bc\":%u,\"exit_bc\":%u,\"instruction_callbacks\":%" PRIu64 ","
+           "\"callback_trace_truncated\":%s,\"callback_trace\":[",
+           name,window_finished?"complete":"timeout",window_start_pc,window_end_pc,
+           window_started?"true":"false",window_finished?"true":"false",window_entry,window_exit,
+           window_finished?window_exit-window_entry:0,window_entry_opcode,window_exit_opcode,
+           window_entry_io[0],window_exit_io[0],window_entry_io[1],window_exit_io[1],
+           window_entry_io[2],window_exit_io[2],window_entry_io[3],window_exit_io[3],
+           window_entry_bc,window_exit_bc,window_callback_count,window_callback_count>8?"true":"false");
+    for (unsigned i=0;i<window_records;++i) {
+        printf("%s{\"pc\":%u,\"opcode\":%u,\"clocks_8mhz\":%" PRIu64 ",\"bc\":%u}",
+               i?",":"",window_trace[i].pc,window_trace[i].opcode,window_trace[i].clocks,window_trace[i].bc);
+    }
+    puts("]}");
+    result=window_finished?0:3;
+done:
+    GB_free(gb);GB_dealloc(gb);return result;
+}
 int main(int argc,char **argv) {
     if (argc>=2 && !strcmp(argv[1],"--mooneye")) return mooneye(argc,argv);
+    if (argc>=2 && !strcmp(argv[1],"--pc-clock-window")) return pc_clock_window(argc,argv);
     uint64_t target,limit=200000000;
     if (argc<5 || argc>8 || !number(argv[3],100000,&target)) return 2;
     const char *model_name=argc>=6?argv[5]:"cgb-e";

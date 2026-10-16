@@ -736,8 +736,52 @@ which clocks run during it. No CPU/APU timing changes are made in this step.
 The core remains `226742c`; evidence and per-case hashes are in
 `tests/fixtures/external-reference/cgb-stop-apu.json`. Existing harness budgets
 remain unchanged; these longer controls explicitly request larger bounded
-budgets. Next measure instruction-entry/exit time around one speed-switch STOP
-to resolve its duration and clock domains before changing the CPU/APU model.
+budgets. The subsequent instruction-window measurements below resolve the
+reference intervals before changing the CPU/APU model.
+
+`scripts/cgb_stop_timing_probe.py` now measures a single STOP/NOP operation and
+resumed instruction on the unchanged `9b579d8` core. The optional reference
+adapter's `--pc-clock-window` mode uses public execution callbacks and accumulated
+`GB_run` 8-MHz clocks. It records at most eight callback entries, plus KEY1,
+DIV, TIMA, PCM12 and BC witnesses. Timestamps identify the API call containing
+the callback, not a physical opcode-fetch edge. GBB uses its existing first-PC
+witnesses at operation entry and after the first resumed instruction, with
+explicit Mooneye completion. Thus an early PC advance alone cannot qualify
+as completed resumption. CPU T-cycles and reference 8-MHz clocks stay separate;
+the GBB comparison conversion explicitly assumes its current atomic STOP.
+
+All 20 cases repeat, and all register-effect comparisons agree. The ten NOP
+controls match in time; all ten switch cases differ. For a first resumed NOP
+(or equal-cost INC B), the reference intervals are:
+
+| Transition | Entry to first resume callback | Entry through first resumed instruction | First resume call gap | Later NOP call gap |
+| --- | --- | --- | --- | --- |
+| Normal to double | 131,088 | 131,096 | 8 | 4 |
+| Double to normal | 262,150 | 262,166 | 16 | 8 |
+
+Every value in this table is in reference 8-MHz ticks. Results are identical
+with active, armed and powered-off APU states. GBB accounts for only eight
+CPU T-cycles across operation plus resumed NOP, equivalent to 12 8-MHz ticks
+under its current two-instruction speed partition. NOP-only controls calibrate
+to 16 ticks at normal speed and eight at double speed.
+
+The resumed INC B changes B from 0x10 to 0x11 exactly once in both cores, with one
+callback per instruction. The two-cycle resumed `LD B,0x11` also agrees in register
+effect; its first-resume call gaps are 12/24 ticks for normal-to-double/double-to-
+normal, versus nominal 8/16. Together these controls locate a gap equivalent
+to one additional machine cycle on the first resumed instruction, rather than
+an instruction replay or a permanent new-speed error. Later NOP cadence is
+nominal. TIMA still changes from 0x30 to 0xB0 across switches in the reference.
+
+The intervals are consistent with a long new-speed clock interval plus
+direction-dependent boundary overhead, but these API observations do not by
+themselves prescribe hardware clock gating. No CPU/APU timing or save-state
+layout changes are made in this step. Per-case intervals, callback records,
+ROM/executable/library hashes and limits are recorded in
+`tests/fixtures/external-reference/cgb-stop-timing.json`. Next implement and
+validate a staged CGB-E speed transition with direct normalized clock witnesses,
+pause/resume save-state coverage and the existing PCM/timer/lifecycle controls,
+instead of treating STOP as an immediate speed-bit flip.
 
 DIV/APU edges are dispatched at their timer-cycle boundary rather than being
 queued until the end of a bus batch. The APU also models the hardware rule that

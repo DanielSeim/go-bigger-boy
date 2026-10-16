@@ -1,0 +1,816 @@
+{
+  "schema": "gbb-stop-instruction-timing-evidence-v1",
+  "qualification": false,
+  "date": "2026-10-16",
+  "core_commit": "9b579d8",
+  "model": "cgb-e",
+  "sameboy_commit": "208ba4afabffab9edde416f2dbb8ae459e34adb8",
+  "sameboy_library_sha256": "1ba66d2d813d99267b1be27cbc4642d624bbb8c7370e881546b1223bec3cf9fb",
+  "runner_sha256": "4ac2912d18bbc201b280714c735e54780f572b82d7cb6ed3e4326897b86e9eba",
+  "adapter_sha256": "91c3f965421013c9174bdca5d82b58da7a1723c228d15bee8559e9b22f269365",
+  "boot_sha256": "c8937124cd7dcafc036dcad3ad46008ea57b4e76abfa3da6012ff8bdbd7687d0",
+  "source_sha256": {
+    "scripts/sameboy_cgb_capture.c": "1e7d883b0f27472afce35d8280d84ee96485fd39860e7b57c40b985c5026ff36",
+    "scripts/cgb_stop_timing_probe.py": "3e4b738fb80710d54a24a93ec59445c99115adfd393d9e8bfd9e996daac409cf",
+    "src/cpu.cpp": "ef8ad174d6a5a1dd0766bdd6f1bc3ff51d17f01ebfc8ea112cfad2b5f5eb5b5e",
+    "src/memory_bus.cpp": "41cf3fba9fca5651828ef01b2d275ce5f86a934c16c7f67517a622b885536da5",
+    "src/apu.cpp": "67a1cc2fb67629fa4a6a359615df2d857f83276ad5aa82fb184eb56c90cee4d7"
+  },
+  "boundary": "GB_run call before instruction callback",
+  "gbb_conversion_assumption": "GBB operation cycles at initial speed; resumed instruction at final speed",
+  "cases": 20,
+  "emulator_executions": 200,
+  "takes_per_boundary": 2,
+  "matching": 10,
+  "architectural_matching": 20,
+  "all_repeatable": true,
+  "callback_trace_bound": 8,
+  "rows": [
+    {
+      "scenario": "active-switch",
+      "initial_double_speed": false,
+      "final_double_speed": true,
+      "rom_sha256": "a898243f0e3836c2b86fd93e10dd62140eca4c96919b91e4e60e3dd5805791b3",
+      "timing_match": false,
+      "architectural_match": true,
+      "gbb_elapsed_cpu_t_cycles": 8,
+      "gbb_partitioned_8mhz_clocks": 12,
+      "reference_to_first_resume_call_8mhz": 131088,
+      "reference_through_first_instruction_8mhz": 131096,
+      "first_resume_call_gap_8mhz": 8,
+      "steady_resume_call_gap_8mhz": 4,
+      "nominal_resume_8mhz": 4,
+      "reference_entry_tima": 48,
+      "reference_exit_tima": 176,
+      "reference_entry_bc": 4096,
+      "reference_exit_bc": 4096,
+      "callback_trace": [
+        {
+          "pc": 4096,
+          "opcode": 16,
+          "clocks_8mhz": 9621416,
+          "bc": 4096
+        },
+        {
+          "pc": 4098,
+          "opcode": 0,
+          "clocks_8mhz": 9752504,
+          "bc": 4096
+        },
+        {
+          "pc": 4099,
+          "opcode": 0,
+          "clocks_8mhz": 9752512,
+          "bc": 4096
+        }
+      ]
+    },
+    {
+      "scenario": "active-nop",
+      "initial_double_speed": false,
+      "final_double_speed": false,
+      "rom_sha256": "5561e3c69db2fd39f8463590ff9d3fd0fb83d0b451b88f4f2eb4b44dd3e4e081",
+      "timing_match": true,
+      "architectural_match": true,
+      "gbb_elapsed_cpu_t_cycles": 8,
+      "gbb_partitioned_8mhz_clocks": 16,
+      "reference_to_first_resume_call_8mhz": 8,
+      "reference_through_first_instruction_8mhz": 16,
+      "first_resume_call_gap_8mhz": 8,
+      "steady_resume_call_gap_8mhz": 8,
+      "nominal_resume_8mhz": 8,
+      "reference_entry_tima": 48,
+      "reference_exit_tima": 48,
+      "reference_entry_bc": 4096,
+      "reference_exit_bc": 4096,
+      "callback_trace": [
+        {
+          "pc": 4096,
+          "opcode": 0,
+          "clocks_8mhz": 9621416,
+          "bc": 4096
+        },
+        {
+          "pc": 4097,
+          "opcode": 0,
+          "clocks_8mhz": 9621424,
+          "bc": 4096
+        },
+        {
+          "pc": 4098,
+          "opcode": 0,
+          "clocks_8mhz": 9621432,
+          "bc": 4096
+        }
+      ]
+    },
+    {
+      "scenario": "armed-switch",
+      "initial_double_speed": false,
+      "final_double_speed": true,
+      "rom_sha256": "3ca3ed185aa1f26184477e9f2433d453adc65448c803a80dd1d8a6fbfcb8236a",
+      "timing_match": false,
+      "architectural_match": true,
+      "gbb_elapsed_cpu_t_cycles": 8,
+      "gbb_partitioned_8mhz_clocks": 12,
+      "reference_to_first_resume_call_8mhz": 131088,
+      "reference_through_first_instruction_8mhz": 131096,
+      "first_resume_call_gap_8mhz": 8,
+      "steady_resume_call_gap_8mhz": 4,
+      "nominal_resume_8mhz": 4,
+      "reference_entry_tima": 48,
+      "reference_exit_tima": 176,
+      "reference_entry_bc": 4096,
+      "reference_exit_bc": 4096,
+      "callback_trace": [
+        {
+          "pc": 4096,
+          "opcode": 16,
+          "clocks_8mhz": 9621416,
+          "bc": 4096
+        },
+        {
+          "pc": 4098,
+          "opcode": 0,
+          "clocks_8mhz": 9752504,
+          "bc": 4096
+        },
+        {
+          "pc": 4099,
+          "opcode": 0,
+          "clocks_8mhz": 9752512,
+          "bc": 4096
+        }
+      ]
+    },
+    {
+      "scenario": "armed-nop",
+      "initial_double_speed": false,
+      "final_double_speed": false,
+      "rom_sha256": "98d719c0210082f6ee5c8656fee442150f4e3784e417f07c8fe7e163dee2f60c",
+      "timing_match": true,
+      "architectural_match": true,
+      "gbb_elapsed_cpu_t_cycles": 8,
+      "gbb_partitioned_8mhz_clocks": 16,
+      "reference_to_first_resume_call_8mhz": 8,
+      "reference_through_first_instruction_8mhz": 16,
+      "first_resume_call_gap_8mhz": 8,
+      "steady_resume_call_gap_8mhz": 8,
+      "nominal_resume_8mhz": 8,
+      "reference_entry_tima": 48,
+      "reference_exit_tima": 48,
+      "reference_entry_bc": 4096,
+      "reference_exit_bc": 4096,
+      "callback_trace": [
+        {
+          "pc": 4096,
+          "opcode": 0,
+          "clocks_8mhz": 9621416,
+          "bc": 4096
+        },
+        {
+          "pc": 4097,
+          "opcode": 0,
+          "clocks_8mhz": 9621424,
+          "bc": 4096
+        },
+        {
+          "pc": 4098,
+          "opcode": 0,
+          "clocks_8mhz": 9621432,
+          "bc": 4096
+        }
+      ]
+    },
+    {
+      "scenario": "off-switch",
+      "initial_double_speed": false,
+      "final_double_speed": true,
+      "rom_sha256": "fd9aed5fe751d012ed91aeecb5e6d1adb2bd590fa1688d8a22f9d22bd48d49dc",
+      "timing_match": false,
+      "architectural_match": true,
+      "gbb_elapsed_cpu_t_cycles": 8,
+      "gbb_partitioned_8mhz_clocks": 12,
+      "reference_to_first_resume_call_8mhz": 131088,
+      "reference_through_first_instruction_8mhz": 131096,
+      "first_resume_call_gap_8mhz": 8,
+      "steady_resume_call_gap_8mhz": 4,
+      "nominal_resume_8mhz": 4,
+      "reference_entry_tima": 48,
+      "reference_exit_tima": 176,
+      "reference_entry_bc": 4096,
+      "reference_exit_bc": 4096,
+      "callback_trace": [
+        {
+          "pc": 4096,
+          "opcode": 16,
+          "clocks_8mhz": 9621416,
+          "bc": 4096
+        },
+        {
+          "pc": 4098,
+          "opcode": 0,
+          "clocks_8mhz": 9752504,
+          "bc": 4096
+        },
+        {
+          "pc": 4099,
+          "opcode": 0,
+          "clocks_8mhz": 9752512,
+          "bc": 4096
+        }
+      ]
+    },
+    {
+      "scenario": "off-nop",
+      "initial_double_speed": false,
+      "final_double_speed": false,
+      "rom_sha256": "8551b1863eff9a4232498b406085c3cc24a67ce2b7e3c5bcbf6292d6196eadeb",
+      "timing_match": true,
+      "architectural_match": true,
+      "gbb_elapsed_cpu_t_cycles": 8,
+      "gbb_partitioned_8mhz_clocks": 16,
+      "reference_to_first_resume_call_8mhz": 8,
+      "reference_through_first_instruction_8mhz": 16,
+      "first_resume_call_gap_8mhz": 8,
+      "steady_resume_call_gap_8mhz": 8,
+      "nominal_resume_8mhz": 8,
+      "reference_entry_tima": 48,
+      "reference_exit_tima": 48,
+      "reference_entry_bc": 4096,
+      "reference_exit_bc": 4096,
+      "callback_trace": [
+        {
+          "pc": 4096,
+          "opcode": 0,
+          "clocks_8mhz": 9621416,
+          "bc": 4096
+        },
+        {
+          "pc": 4097,
+          "opcode": 0,
+          "clocks_8mhz": 9621424,
+          "bc": 4096
+        },
+        {
+          "pc": 4098,
+          "opcode": 0,
+          "clocks_8mhz": 9621432,
+          "bc": 4096
+        }
+      ]
+    },
+    {
+      "scenario": "active-switch-inc",
+      "initial_double_speed": false,
+      "final_double_speed": true,
+      "rom_sha256": "cdea1c8ac2731a27a755628bb2fa63e69b5ab4c8a6d43c0497e4f64ef0868a91",
+      "timing_match": false,
+      "architectural_match": true,
+      "gbb_elapsed_cpu_t_cycles": 8,
+      "gbb_partitioned_8mhz_clocks": 12,
+      "reference_to_first_resume_call_8mhz": 131088,
+      "reference_through_first_instruction_8mhz": 131096,
+      "first_resume_call_gap_8mhz": 8,
+      "steady_resume_call_gap_8mhz": 4,
+      "nominal_resume_8mhz": 4,
+      "reference_entry_tima": 48,
+      "reference_exit_tima": 176,
+      "reference_entry_bc": 4096,
+      "reference_exit_bc": 4352,
+      "callback_trace": [
+        {
+          "pc": 4096,
+          "opcode": 16,
+          "clocks_8mhz": 9621416,
+          "bc": 4096
+        },
+        {
+          "pc": 4098,
+          "opcode": 4,
+          "clocks_8mhz": 9752504,
+          "bc": 4096
+        },
+        {
+          "pc": 4099,
+          "opcode": 0,
+          "clocks_8mhz": 9752512,
+          "bc": 4352
+        }
+      ]
+    },
+    {
+      "scenario": "active-nop-inc",
+      "initial_double_speed": false,
+      "final_double_speed": false,
+      "rom_sha256": "f97ff5118f92a08f57264907f39354a3beb0dd369f437c10fde78752cd67e9ac",
+      "timing_match": true,
+      "architectural_match": true,
+      "gbb_elapsed_cpu_t_cycles": 8,
+      "gbb_partitioned_8mhz_clocks": 16,
+      "reference_to_first_resume_call_8mhz": 8,
+      "reference_through_first_instruction_8mhz": 16,
+      "first_resume_call_gap_8mhz": 8,
+      "steady_resume_call_gap_8mhz": 8,
+      "nominal_resume_8mhz": 8,
+      "reference_entry_tima": 48,
+      "reference_exit_tima": 48,
+      "reference_entry_bc": 4096,
+      "reference_exit_bc": 4352,
+      "callback_trace": [
+        {
+          "pc": 4096,
+          "opcode": 0,
+          "clocks_8mhz": 9621416,
+          "bc": 4096
+        },
+        {
+          "pc": 4097,
+          "opcode": 4,
+          "clocks_8mhz": 9621424,
+          "bc": 4096
+        },
+        {
+          "pc": 4098,
+          "opcode": 0,
+          "clocks_8mhz": 9621432,
+          "bc": 4352
+        }
+      ]
+    },
+    {
+      "scenario": "active-switch-load",
+      "initial_double_speed": false,
+      "final_double_speed": true,
+      "rom_sha256": "d35aea78a3bff3b3d7c003f8c34939a2483332ce34bba844de3846d029d2fefa",
+      "timing_match": false,
+      "architectural_match": true,
+      "gbb_elapsed_cpu_t_cycles": 12,
+      "gbb_partitioned_8mhz_clocks": 16,
+      "reference_to_first_resume_call_8mhz": 131088,
+      "reference_through_first_instruction_8mhz": 131100,
+      "first_resume_call_gap_8mhz": 12,
+      "steady_resume_call_gap_8mhz": 4,
+      "nominal_resume_8mhz": 8,
+      "reference_entry_tima": 48,
+      "reference_exit_tima": 176,
+      "reference_entry_bc": 4096,
+      "reference_exit_bc": 4352,
+      "callback_trace": [
+        {
+          "pc": 4096,
+          "opcode": 16,
+          "clocks_8mhz": 9621416,
+          "bc": 4096
+        },
+        {
+          "pc": 4098,
+          "opcode": 6,
+          "clocks_8mhz": 9752504,
+          "bc": 4096
+        },
+        {
+          "pc": 4100,
+          "opcode": 0,
+          "clocks_8mhz": 9752516,
+          "bc": 4352
+        }
+      ]
+    },
+    {
+      "scenario": "active-nop-load",
+      "initial_double_speed": false,
+      "final_double_speed": false,
+      "rom_sha256": "0d3829d7fbe655643191ef6afd743d2f06a1e06cf9496de21f9ddbf0a19c3399",
+      "timing_match": true,
+      "architectural_match": true,
+      "gbb_elapsed_cpu_t_cycles": 12,
+      "gbb_partitioned_8mhz_clocks": 24,
+      "reference_to_first_resume_call_8mhz": 8,
+      "reference_through_first_instruction_8mhz": 24,
+      "first_resume_call_gap_8mhz": 16,
+      "steady_resume_call_gap_8mhz": 8,
+      "nominal_resume_8mhz": 16,
+      "reference_entry_tima": 48,
+      "reference_exit_tima": 48,
+      "reference_entry_bc": 4096,
+      "reference_exit_bc": 4352,
+      "callback_trace": [
+        {
+          "pc": 4096,
+          "opcode": 0,
+          "clocks_8mhz": 9621416,
+          "bc": 4096
+        },
+        {
+          "pc": 4097,
+          "opcode": 6,
+          "clocks_8mhz": 9621424,
+          "bc": 4096
+        },
+        {
+          "pc": 4099,
+          "opcode": 0,
+          "clocks_8mhz": 9621440,
+          "bc": 4352
+        }
+      ]
+    },
+    {
+      "scenario": "active-switch",
+      "initial_double_speed": true,
+      "final_double_speed": false,
+      "rom_sha256": "9c1468699558b3cd8a1c1806150cdc0e97ac5e4568c0f14a06eb7ba343c60497",
+      "timing_match": false,
+      "architectural_match": true,
+      "gbb_elapsed_cpu_t_cycles": 8,
+      "gbb_partitioned_8mhz_clocks": 12,
+      "reference_to_first_resume_call_8mhz": 262150,
+      "reference_through_first_instruction_8mhz": 262166,
+      "first_resume_call_gap_8mhz": 16,
+      "steady_resume_call_gap_8mhz": 8,
+      "nominal_resume_8mhz": 8,
+      "reference_entry_tima": 48,
+      "reference_exit_tima": 176,
+      "reference_entry_bc": 4096,
+      "reference_exit_bc": 4096,
+      "callback_trace": [
+        {
+          "pc": 4096,
+          "opcode": 16,
+          "clocks_8mhz": 9751856,
+          "bc": 4096
+        },
+        {
+          "pc": 4098,
+          "opcode": 0,
+          "clocks_8mhz": 10014006,
+          "bc": 4096
+        },
+        {
+          "pc": 4099,
+          "opcode": 0,
+          "clocks_8mhz": 10014022,
+          "bc": 4096
+        }
+      ]
+    },
+    {
+      "scenario": "active-nop",
+      "initial_double_speed": true,
+      "final_double_speed": true,
+      "rom_sha256": "fb477a47afac0ad441dc9a9b192a7f871bfb5a2d26f61281c92550f3accb7dbc",
+      "timing_match": true,
+      "architectural_match": true,
+      "gbb_elapsed_cpu_t_cycles": 8,
+      "gbb_partitioned_8mhz_clocks": 8,
+      "reference_to_first_resume_call_8mhz": 4,
+      "reference_through_first_instruction_8mhz": 8,
+      "first_resume_call_gap_8mhz": 4,
+      "steady_resume_call_gap_8mhz": 4,
+      "nominal_resume_8mhz": 4,
+      "reference_entry_tima": 48,
+      "reference_exit_tima": 48,
+      "reference_entry_bc": 4096,
+      "reference_exit_bc": 4096,
+      "callback_trace": [
+        {
+          "pc": 4096,
+          "opcode": 0,
+          "clocks_8mhz": 9751856,
+          "bc": 4096
+        },
+        {
+          "pc": 4097,
+          "opcode": 0,
+          "clocks_8mhz": 9751860,
+          "bc": 4096
+        },
+        {
+          "pc": 4098,
+          "opcode": 0,
+          "clocks_8mhz": 9751864,
+          "bc": 4096
+        }
+      ]
+    },
+    {
+      "scenario": "armed-switch",
+      "initial_double_speed": true,
+      "final_double_speed": false,
+      "rom_sha256": "c4431f5ae1f451dc23e66b84ff4f62b9a3b6e727d0962a449c231df413480df1",
+      "timing_match": false,
+      "architectural_match": true,
+      "gbb_elapsed_cpu_t_cycles": 8,
+      "gbb_partitioned_8mhz_clocks": 12,
+      "reference_to_first_resume_call_8mhz": 262150,
+      "reference_through_first_instruction_8mhz": 262166,
+      "first_resume_call_gap_8mhz": 16,
+      "steady_resume_call_gap_8mhz": 8,
+      "nominal_resume_8mhz": 8,
+      "reference_entry_tima": 48,
+      "reference_exit_tima": 176,
+      "reference_entry_bc": 4096,
+      "reference_exit_bc": 4096,
+      "callback_trace": [
+        {
+          "pc": 4096,
+          "opcode": 16,
+          "clocks_8mhz": 9751856,
+          "bc": 4096
+        },
+        {
+          "pc": 4098,
+          "opcode": 0,
+          "clocks_8mhz": 10014006,
+          "bc": 4096
+        },
+        {
+          "pc": 4099,
+          "opcode": 0,
+          "clocks_8mhz": 10014022,
+          "bc": 4096
+        }
+      ]
+    },
+    {
+      "scenario": "armed-nop",
+      "initial_double_speed": true,
+      "final_double_speed": true,
+      "rom_sha256": "38a3fac6a3a3fe7006dd93036e9031083269e6992f7a3fd18e3dec8ecb87268b",
+      "timing_match": true,
+      "architectural_match": true,
+      "gbb_elapsed_cpu_t_cycles": 8,
+      "gbb_partitioned_8mhz_clocks": 8,
+      "reference_to_first_resume_call_8mhz": 4,
+      "reference_through_first_instruction_8mhz": 8,
+      "first_resume_call_gap_8mhz": 4,
+      "steady_resume_call_gap_8mhz": 4,
+      "nominal_resume_8mhz": 4,
+      "reference_entry_tima": 48,
+      "reference_exit_tima": 48,
+      "reference_entry_bc": 4096,
+      "reference_exit_bc": 4096,
+      "callback_trace": [
+        {
+          "pc": 4096,
+          "opcode": 0,
+          "clocks_8mhz": 9751856,
+          "bc": 4096
+        },
+        {
+          "pc": 4097,
+          "opcode": 0,
+          "clocks_8mhz": 9751860,
+          "bc": 4096
+        },
+        {
+          "pc": 4098,
+          "opcode": 0,
+          "clocks_8mhz": 9751864,
+          "bc": 4096
+        }
+      ]
+    },
+    {
+      "scenario": "off-switch",
+      "initial_double_speed": true,
+      "final_double_speed": false,
+      "rom_sha256": "96c7910af9b6e5cb1319e9bb52e4bea897f6dbf302c1a9978bdcdf8198bbd18b",
+      "timing_match": false,
+      "architectural_match": true,
+      "gbb_elapsed_cpu_t_cycles": 8,
+      "gbb_partitioned_8mhz_clocks": 12,
+      "reference_to_first_resume_call_8mhz": 262150,
+      "reference_through_first_instruction_8mhz": 262166,
+      "first_resume_call_gap_8mhz": 16,
+      "steady_resume_call_gap_8mhz": 8,
+      "nominal_resume_8mhz": 8,
+      "reference_entry_tima": 48,
+      "reference_exit_tima": 176,
+      "reference_entry_bc": 4096,
+      "reference_exit_bc": 4096,
+      "callback_trace": [
+        {
+          "pc": 4096,
+          "opcode": 16,
+          "clocks_8mhz": 9751856,
+          "bc": 4096
+        },
+        {
+          "pc": 4098,
+          "opcode": 0,
+          "clocks_8mhz": 10014006,
+          "bc": 4096
+        },
+        {
+          "pc": 4099,
+          "opcode": 0,
+          "clocks_8mhz": 10014022,
+          "bc": 4096
+        }
+      ]
+    },
+    {
+      "scenario": "off-nop",
+      "initial_double_speed": true,
+      "final_double_speed": true,
+      "rom_sha256": "eb7347dfcbf2e6e403b982a658342f937678ca608bf9b2c6a57b3026f9865437",
+      "timing_match": true,
+      "architectural_match": true,
+      "gbb_elapsed_cpu_t_cycles": 8,
+      "gbb_partitioned_8mhz_clocks": 8,
+      "reference_to_first_resume_call_8mhz": 4,
+      "reference_through_first_instruction_8mhz": 8,
+      "first_resume_call_gap_8mhz": 4,
+      "steady_resume_call_gap_8mhz": 4,
+      "nominal_resume_8mhz": 4,
+      "reference_entry_tima": 48,
+      "reference_exit_tima": 48,
+      "reference_entry_bc": 4096,
+      "reference_exit_bc": 4096,
+      "callback_trace": [
+        {
+          "pc": 4096,
+          "opcode": 0,
+          "clocks_8mhz": 9751856,
+          "bc": 4096
+        },
+        {
+          "pc": 4097,
+          "opcode": 0,
+          "clocks_8mhz": 9751860,
+          "bc": 4096
+        },
+        {
+          "pc": 4098,
+          "opcode": 0,
+          "clocks_8mhz": 9751864,
+          "bc": 4096
+        }
+      ]
+    },
+    {
+      "scenario": "active-switch-inc",
+      "initial_double_speed": true,
+      "final_double_speed": false,
+      "rom_sha256": "9e784a17d8bb807381a22961d908dfa2cac2d35294a1bd61162178749f9f8197",
+      "timing_match": false,
+      "architectural_match": true,
+      "gbb_elapsed_cpu_t_cycles": 8,
+      "gbb_partitioned_8mhz_clocks": 12,
+      "reference_to_first_resume_call_8mhz": 262150,
+      "reference_through_first_instruction_8mhz": 262166,
+      "first_resume_call_gap_8mhz": 16,
+      "steady_resume_call_gap_8mhz": 8,
+      "nominal_resume_8mhz": 8,
+      "reference_entry_tima": 48,
+      "reference_exit_tima": 176,
+      "reference_entry_bc": 4096,
+      "reference_exit_bc": 4352,
+      "callback_trace": [
+        {
+          "pc": 4096,
+          "opcode": 16,
+          "clocks_8mhz": 9751856,
+          "bc": 4096
+        },
+        {
+          "pc": 4098,
+          "opcode": 4,
+          "clocks_8mhz": 10014006,
+          "bc": 4096
+        },
+        {
+          "pc": 4099,
+          "opcode": 0,
+          "clocks_8mhz": 10014022,
+          "bc": 4352
+        }
+      ]
+    },
+    {
+      "scenario": "active-nop-inc",
+      "initial_double_speed": true,
+      "final_double_speed": true,
+      "rom_sha256": "627f4e9edadbaaa5e3ede886c28e4ccadecd2fb8d5460fc52b71ba536616bd60",
+      "timing_match": true,
+      "architectural_match": true,
+      "gbb_elapsed_cpu_t_cycles": 8,
+      "gbb_partitioned_8mhz_clocks": 8,
+      "reference_to_first_resume_call_8mhz": 4,
+      "reference_through_first_instruction_8mhz": 8,
+      "first_resume_call_gap_8mhz": 4,
+      "steady_resume_call_gap_8mhz": 4,
+      "nominal_resume_8mhz": 4,
+      "reference_entry_tima": 48,
+      "reference_exit_tima": 48,
+      "reference_entry_bc": 4096,
+      "reference_exit_bc": 4352,
+      "callback_trace": [
+        {
+          "pc": 4096,
+          "opcode": 0,
+          "clocks_8mhz": 9751856,
+          "bc": 4096
+        },
+        {
+          "pc": 4097,
+          "opcode": 4,
+          "clocks_8mhz": 9751860,
+          "bc": 4096
+        },
+        {
+          "pc": 4098,
+          "opcode": 0,
+          "clocks_8mhz": 9751864,
+          "bc": 4352
+        }
+      ]
+    },
+    {
+      "scenario": "active-switch-load",
+      "initial_double_speed": true,
+      "final_double_speed": false,
+      "rom_sha256": "fa144f2f3faba26a83c2c1edd993a7814d9a131b37e0949ecf5bcf48de5ed416",
+      "timing_match": false,
+      "architectural_match": true,
+      "gbb_elapsed_cpu_t_cycles": 12,
+      "gbb_partitioned_8mhz_clocks": 20,
+      "reference_to_first_resume_call_8mhz": 262150,
+      "reference_through_first_instruction_8mhz": 262174,
+      "first_resume_call_gap_8mhz": 24,
+      "steady_resume_call_gap_8mhz": 8,
+      "nominal_resume_8mhz": 16,
+      "reference_entry_tima": 48,
+      "reference_exit_tima": 176,
+      "reference_entry_bc": 4096,
+      "reference_exit_bc": 4352,
+      "callback_trace": [
+        {
+          "pc": 4096,
+          "opcode": 16,
+          "clocks_8mhz": 9751856,
+          "bc": 4096
+        },
+        {
+          "pc": 4098,
+          "opcode": 6,
+          "clocks_8mhz": 10014006,
+          "bc": 4096
+        },
+        {
+          "pc": 4100,
+          "opcode": 0,
+          "clocks_8mhz": 10014030,
+          "bc": 4352
+        }
+      ]
+    },
+    {
+      "scenario": "active-nop-load",
+      "initial_double_speed": true,
+      "final_double_speed": true,
+      "rom_sha256": "daf0b0c27f328850c0907d8f53a2312e0c381ca5ee4495e682dc8f3f3985593d",
+      "timing_match": true,
+      "architectural_match": true,
+      "gbb_elapsed_cpu_t_cycles": 12,
+      "gbb_partitioned_8mhz_clocks": 12,
+      "reference_to_first_resume_call_8mhz": 4,
+      "reference_through_first_instruction_8mhz": 12,
+      "first_resume_call_gap_8mhz": 8,
+      "steady_resume_call_gap_8mhz": 4,
+      "nominal_resume_8mhz": 8,
+      "reference_entry_tima": 48,
+      "reference_exit_tima": 48,
+      "reference_entry_bc": 4096,
+      "reference_exit_bc": 4352,
+      "callback_trace": [
+        {
+          "pc": 4096,
+          "opcode": 0,
+          "clocks_8mhz": 9751856,
+          "bc": 4096
+        },
+        {
+          "pc": 4097,
+          "opcode": 6,
+          "clocks_8mhz": 9751860,
+          "bc": 4096
+        },
+        {
+          "pc": 4099,
+          "opcode": 0,
+          "clocks_8mhz": 9751868,
+          "bc": 4352
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "Pinned reference observations only; no physical hardware qualification.",
+    "API-call boundary clocks are not direct hardware opcode-fetch timestamps.",
+    "GBB conversion assumes its current atomic STOP; staged clocking requires direct normalized clock instrumentation.",
+    "No core timing or save-state change is made by this measurement tool."
+  ]
+}
