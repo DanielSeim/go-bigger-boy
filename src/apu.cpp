@@ -42,6 +42,7 @@ void Apu::initialize_power_on(const HardwareModel model) noexcept {
     cgb_hardware_ = is_cgb_hardware(model);
     modern_cgb_ = model == HardwareModel::cgb || model == HardwareModel::cgb_e || is_agb_hardware(model);
     cgb_e_revision_ = model == HardwareModel::cgb_e || is_agb_hardware(model);
+    cgb_e_frequency_latch_ = model == HardwareModel::cgb_e;
     cgb_e_power_cycle_startup_ = false;
     power_off();
 }
@@ -187,10 +188,7 @@ void Apu::write_register(const std::uint16_t address,
             apply_envelope_write_glitch(pulse1_.envelope, value, old_value);
         break;
     case 0xFF13:
-        if (pulse1_.just_reloaded) {
-            pulse1_.period = pulse_period(0x01);
-            pulse1_.timer = pulse1_.period;
-        }
+        update_pulse_frequency(pulse1_, 0x01, false);
         break;
     case 0xFF14:
         if (!pulse1_.length_enabled && (value & 0x40) != 0 &&
@@ -201,9 +199,8 @@ void Apu::write_register(const std::uint16_t address,
         pulse1_.length_enabled = (value & 0x40) != 0;
         if ((value & 0x80) != 0) {
             trigger_pulse1();
-        } else if (pulse1_.just_reloaded) {
-            pulse1_.period = pulse_period(0x01);
-            pulse1_.timer = pulse1_.period;
+        } else {
+            update_pulse_frequency(pulse1_, 0x01, true);
         }
         break;
     case 0xFF16:
@@ -223,10 +220,7 @@ void Apu::write_register(const std::uint16_t address,
             apply_envelope_write_glitch(pulse2_.envelope, value, old_value);
         break;
     case 0xFF18:
-        if (pulse2_.just_reloaded) {
-            pulse2_.period = pulse_period(0x06);
-            pulse2_.timer = pulse2_.period;
-        }
+        update_pulse_frequency(pulse2_, 0x06, false);
         break;
     case 0xFF19:
         if (!pulse2_.length_enabled && (value & 0x40) != 0 &&
@@ -237,9 +231,8 @@ void Apu::write_register(const std::uint16_t address,
         pulse2_.length_enabled = (value & 0x40) != 0;
         if ((value & 0x80) != 0) {
             trigger_pulse2();
-        } else if (pulse2_.just_reloaded) {
-            pulse2_.period = pulse_period(0x06);
-            pulse2_.timer = pulse2_.period;
+        } else {
+            update_pulse_frequency(pulse2_, 0x06, true);
         }
         break;
     case 0xFF1A:
@@ -281,11 +274,6 @@ void Apu::write_register(const std::uint16_t address,
 }
 
 void Apu::tick(const unsigned cycles) noexcept {
-    // CGB-E pulse startup aligns to the 1-MHz clock established by NR52,
-    // including while both channels are disabled and audio output is muted.
-    if (powered_ && cgb_e_revision_) {
-        power_clock_phase_ = static_cast<std::uint8_t>((power_clock_phase_ + cycles) & 3U);
-    }
     const auto refresh_mixer = [&]() noexcept {
         const std::array<float, 4> outputs{
             powered_ ? pulse_output(pulse1_, 0x01) : 0.0F,
@@ -314,11 +302,19 @@ void Apu::tick(const unsigned cycles) noexcept {
         (!wave_.enabled || wave_clocks <= wave_.timer) &&
         (!noise_running || noise_.timer > cycles) && !sample_boundary_within(cycles);
     if (batch) {
+        // Preserve the CGB-E high-register reload window until its next
+        // 1-MHz edge, including muted output and batched peripheral ticks.
+        const auto crossed_power_clock = power_clock_phase_ + cycles >= 4;
+        if (powered_ && cgb_e_revision_) {
+            power_clock_phase_ = static_cast<std::uint8_t>((power_clock_phase_ + cycles) & 3U);
+        }
         // Between transitions only countdowns change. No callback can inspect
         // an intermediate state in this span. HP filtering and integration
         // below still execute literally once per native cycle.
         for (auto* pulse : {&pulse1_, &pulse2_}) if (pulse->enabled) {
-            pulse->timer -= cycles; pulse->just_reloaded = false;
+            pulse->timer -= cycles;
+            if (!cgb_e_frequency_latch_ || !cgb_e_power_cycle_startup_ || crossed_power_clock)
+                pulse->just_reloaded = false;
         }
         if (wave_.enabled) {
             wave_.clock_phase ^= (cycles & 1U) != 0;
@@ -367,6 +363,8 @@ void Apu::tick(const unsigned cycles) noexcept {
         return;
     }
     for (unsigned cycle = 0; cycle < cycles; ++cycle) {
+        if (powered_ && cgb_e_revision_)
+            power_clock_phase_ = static_cast<std::uint8_t>((power_clock_phase_ + 1) & 3U);
         if (!batch) {
             tick_pulse(pulse1_, 0x01);
             tick_pulse(pulse2_, 0x06);
@@ -725,10 +723,24 @@ void Apu::clock_envelope(EnvelopeState& envelope,
     }
 }
 
+void Apu::update_pulse_frequency(PulseState& pulse, const unsigned register_offset,
+                                  const bool high_register) noexcept {
+    if (!pulse.just_reloaded) return;
+    const auto extended_window = cgb_e_frequency_latch_ && cgb_e_power_cycle_startup_;
+    // NRx3 retains the single-clock reload collision. CGB-E NRx4 latches
+    // throughout the current 1-MHz interval; AGB uses the established path.
+    if (extended_window && !high_register && power_clock_phase_ != 0) return;
+    pulse.period = pulse_period(register_offset);
+    // Keep the deadline on the original clock edge instead of adding a new
+    // whole period at the CPU write time partway through that interval.
+    pulse.timer = pulse.period - (extended_window ? power_clock_phase_ : 0);
+}
+
 void Apu::tick_pulse(PulseState& pulse,
                      const unsigned register_offset) noexcept {
     if (!pulse.enabled) return;
-    pulse.just_reloaded = false;
+    if (!cgb_e_frequency_latch_ || !cgb_e_power_cycle_startup_ || power_clock_phase_ == 0)
+        pulse.just_reloaded = false;
     if (pulse.timer == 1 && pulse.duty_update_pending) {
         pulse.duty = pulse.pending_duty;
         pulse.duty_update_pending = false;

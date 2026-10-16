@@ -352,6 +352,40 @@ void test_cgb_e_power_relative_pulse_phase() {
     }
 }
 
+void test_cgb_e_frequency_write_window() {
+    for (const auto model : {gameboy::HardwareModel::cgb_e, gameboy::HardwareModel::agb}) {
+        for (const unsigned offset : {0U, 5U}) {
+            for (const bool high_register : {false, true}) {
+                for (const unsigned edge : {104U, 120U}) {
+                    for (unsigned age = 0; age <= 4; ++age) {
+                        for (const bool batched : {false, true}) {
+                            gameboy::MemoryBus bus{gameboy::Cartridge{cgb_test_rom()}};
+                            bus.initialize_post_boot(model);
+                            bus.set_audio_enabled(false);
+                            bus.write8(0xFF26, 0);
+                            bus.write8(0xFF26, 0x80);
+                            bus.write8(0xFF11 + offset, 0);
+                            bus.write8(0xFF12 + offset, 0xF0);
+                            bus.write8(0xFF13 + offset, 0xFC);
+                            bus.write8(0xFF14 + offset, 0x87);
+                            if (batched) bus.tick(edge + age);
+                            else for (unsigned i = 0; i < edge + age; ++i) bus.tick(1);
+                            // High selects period 7184; low selects period 32.
+                            bus.write8((high_register ? 0xFF14 : 0xFF13) + offset,
+                                       high_register ? 0 : 0xF8);
+                            bus.tick(high_register ? 100 : 22 - age);
+                            const auto window = high_register && model == gameboy::HardwareModel::cgb_e ? 4U : 1U;
+                            const auto high = age < window ? edge == 120 : edge == 104;
+                            check(bus.read8(0xFF76) == (high ? (offset == 0 ? 15 : 240) : 0),
+                                  "frequency reload window preserves register and revision distinctions");
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 void test_cgb_revision_boundary_fixtures() {
     const auto first_pulse2_high_cycle = [](const gameboy::HardwareModel model) {
         gameboy::MemoryBus bus{gameboy::Cartridge{cgb_test_rom()}};
@@ -500,6 +534,7 @@ int main() {
     test_cgb_revision_envelope_write_behavior();
     test_cgb_revision_boundary_fixtures();
     test_cgb_e_power_relative_pulse_phase();
+    test_cgb_e_frequency_write_window();
     test_apu_pulse2_samples_and_length();
     test_apu_high_pass_filter();
     return failures == 0 ? 0 : 1;

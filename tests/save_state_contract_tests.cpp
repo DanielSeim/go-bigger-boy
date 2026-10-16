@@ -808,12 +808,50 @@ void test_saved_pulse_enable_phase() {
     }
 }
 
+void test_saved_pulse_frequency_window() {
+    auto rom = banked_rom(2, 0, 0, 0);
+    rom[0x143] = 0x80;
+    for (const unsigned offset : {0U, 5U}) {
+        for (unsigned age = 0; age <= 4; ++age) {
+            gameboy::Emulator emulator{gameboy::Cartridge{rom}, gameboy::HardwareModel::cgb_e};
+            auto& bus = emulator.bus();
+            bus.write8(0xFF26, 0);
+            bus.write8(0xFF26, 0x80);
+            bus.write8(0xFF11 + offset, 0);
+            bus.write8(0xFF12 + offset, 0xF0);
+            bus.write8(0xFF13 + offset, 0xFC);
+            bus.write8(0xFF14 + offset, 0x87);
+            bus.tick(104 + age);
+            const auto state = emulator.save_state();
+            const auto record = [&]() {
+                bus.write8(0xFF14 + offset, 0);
+                std::vector<std::uint8_t> pcm;
+                for (unsigned i = 0; i < 100; ++i) {
+                    bus.tick(1);
+                    pcm.push_back(bus.read8(0xFF76));
+                }
+                return pcm;
+            };
+            const auto expected = record();
+            bus.tick(3);
+            emulator.load_state(state);
+            check(emulator.save_state() == state,
+                  "save states retain the pending frequency-write window");
+            check(record() == expected,
+                  "restoring around reload preserves the frequency-write collision");
+            check(expected.back() == (age < 4 ? 0 : offset == 0 ? 15 : 240),
+                  "restored CGB-E high-write window has the expected closing edge");
+        }
+    }
+}
+
 } // namespace
 
 int main() {
     try {
         test_save_state_round_trip_and_validation();
         test_saved_pulse_enable_phase();
+        test_saved_pulse_frequency_window();
     } catch (const std::exception& error) {
         std::cerr << "Unexpected exception: " << error.what() << '\n';
         return 1;

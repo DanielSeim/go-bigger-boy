@@ -88,8 +88,8 @@ private:
         // Countdown in APU clocks; period is latched at each waveform edge.
         unsigned timer{};
         unsigned period{};
-        // True only for the clock that performed the period reload. Frequency
-        // writes on that boundary have a distinct hardware path.
+        // Frequency-write reload window. CGB-E's high register keeps this
+        // open until the next NR52-relative 1-MHz edge; other paths use one tick.
         bool just_reloaded{};
         EnvelopeState envelope{};
     };
@@ -119,6 +119,8 @@ private:
     void power_off() noexcept;
     void trigger_pulse1() noexcept;
     void trigger_pulse2() noexcept;
+    void update_pulse_frequency(PulseState& pulse, unsigned register_offset,
+                                bool high_register) noexcept;
     void trigger_wave() noexcept;
     void trigger_noise() noexcept;
     static void trigger_envelope(EnvelopeState& envelope,
@@ -162,6 +164,7 @@ private:
     bool cgb_hardware_{};
     bool modern_cgb_{};
     bool cgb_e_revision_{};
+    bool cgb_e_frequency_latch_{};
     bool cgb_e_power_cycle_startup_{};
     std::uint8_t power_clock_phase_{};
     bool powered_{};

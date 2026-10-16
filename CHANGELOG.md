@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Correct CGB-E pulse frequency-high writes during the NR52-relative reload
+  window, preserving frequency-low and AGB timing. All 12 authored boundary
+  cases and the pinned SameSuite frequency test now match SameBoy; SameSuite
+  improves from 55 to 56 passes without losing an existing pass.
+
 - Align CGB-E/AGB inactive pulse triggers to the NR52-relative 1-MHz clock,
   retaining the phase across save/load. All 64 authored phase cases and four
   pinned SameSuite alignment curves now match SameBoy; the full SameSuite

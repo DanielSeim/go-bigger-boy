@@ -1,0 +1,40 @@
+{
+  "project": "SameSuite",
+  "repository": "https://github.com/LIJI32/SameSuite",
+  "bundle": "https://github.com/c-sp/game-boy-test-roms/releases/download/v7.0/game-boy-test-roms-v7.0.zip",
+  "bundle_sha256": "b9a9d7a1075aa35a3d07c07c34974048672d8520dca9e07a50178f5860c3832c",
+  "sameboy_commit": "208ba4afabffab9edde416f2dbb8ae459e34adb8",
+  "distribution": "external-only",
+  "tests": {
+    "channel_1_freq_change_timing_cgbDE": {
+      "path": "apu/channel_1/channel_1_freq_change_timing-cgbDE.gb",
+      "sha256": "2e33d96be99729bcb29ef16c340ae2b29b01a8cdc126ae33e755eaabae07c8ce",
+      "channel": 1,
+      "group_variable": "frequency_high_write_delay",
+      "phase_nops": [],
+      "sample_delay_nops": [
+        [
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29
+        ],
+        [
+          50,
+          51,
+          52,
+          53,
+          54,
+          55,
+          56,
+          57
+        ]
+      ]
+    }
+  },
+  "cpu_speed": "normal_then_double"
+}

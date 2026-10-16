@@ -55,8 +55,9 @@ def curve(memory, channel):
                 sample_sha256=hashlib.sha256(bytes(values)).hexdigest())
 
 
-def run_reference(rom_root, runner, adapter, output):
-    pin = json.loads(PIN.read_text())
+def run_reference(rom_root, runner, adapter, output, *, pin_path=PIN, curve_reader=None,
+                  schema='gbb-samesuite-alignment-reference-v1'):
+    pin = json.loads(pin_path.read_text())
     roms = {name: rom_root / entry['path'] for name, entry in pin['tests'].items()}
     for name, rom in roms.items():
         if digest(rom) != pin['tests'][name]['sha256']:
@@ -64,8 +65,8 @@ def run_reference(rom_root, runner, adapter, output):
     output.mkdir(parents=True, exist_ok=False)
     boot = output / 'owned-cgb-boot.bin'
     boot.write_bytes(anchor.owned_boot('cgb-e'))
-    report = dict(schema='gbb-samesuite-alignment-reference-v1', qualification=False,
-        pin=pin, model='cgb-e', cpu_speed='double', boot_sha256=digest(boot),
+    report = dict(schema=schema, qualification=False,
+        pin=pin, model='cgb-e', cpu_speed=pin.get('cpu_speed', 'double'), boot_sha256=digest(boot),
         runner_sha256=digest(runner), adapter_sha256=digest(adapter), rows=[])
     def execute(command):
         result = subprocess.run(list(map(str, command)), capture_output=True, text=True, timeout=30)
@@ -110,22 +111,27 @@ def run_reference(rom_root, runner, adapter, output):
                 if clocks < measured['completion_clocks']:
                     raise ValueError('snapshot precedes completed test')
                 measured['snapshot_clocks'] = clocks
-                measured.update(curve(state.read_bytes(), pin['tests'][name]['channel']))
+                measured.update(curve_reader(state.read_bytes(), pin['tests'][name]) if curve_reader
+                                else curve(state.read_bytes(), pin['tests'][name]['channel']))
                 takes.append(measured)
             captures[emulator] = dict(takes[0], repeatable=takes[0] == takes[1], commands=commands)
         a, b = captures['gbb']['samples'], captures['sameboy']['samples']
-        differences = [i for i in range(48) if a[i] != b[i]]
+        if len(a) != len(b):
+            raise ValueError('curve length mismatch')
+        differences = [i for i in range(len(a)) if a[i] != b[i]]
         report['rows'].append(dict(test=name, channel=pin['tests'][name]['channel'],
-            group_variable=pin['tests'][name]['group_variable'], phase_nops=[0, 1, 3],
-            sample_delay_nops=list(range(16)), captures=captures, match=not differences,
+            group_variable=pin['tests'][name]['group_variable'],
+            phase_nops=pin['tests'][name].get('phase_nops', [0, 1, 3]),
+            sample_delay_nops=pin['tests'][name].get('sample_delay_nops', list(range(16))),
+            captures=captures, match=not differences,
             different_sample_indices=differences))
     (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     return report
 
 
-def passes(report):
+def passes(report, pin_path=PIN):
     try:
-        expected = set(json.loads(PIN.read_text())['tests'])
+        expected = set(json.loads(pin_path.read_text())['tests'])
         rows = report['rows']
         return len(rows) == len(expected) and {r['test'] for r in rows} == expected and all(
             row['match'] is True and set(row['captures']) == {'gbb', 'sameboy'} and all(

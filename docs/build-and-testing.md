@@ -735,3 +735,22 @@ exit 2 means a capture or input error. Reports always set `qualification=false`.
 `gameboy_cgb_pulse_phase_probe_contract` runs offline. Set `GBB_TEST_RUNNER` and
 `GBB_SAMEBOY_CGB_CAPTURE` to run the complete native matrix through
 `tests/cgb_pulse_phase_probe_tests.py`; no external test ROM is required.
+
+For frequency-write timing, run `scripts/samesuite_frequency_reference.py` with
+the same arguments as the alignment comparison. Its separate pin checks the
+v7.0 CGB-D/E frequency-write ROM before execution; the selected model is CGB-E.
+The report contains all 16 packed immediate/late PCM observations from normal
+and double CPU speed, repeated protocols and frozen completion checks.
+`scripts/cgb_pulse_frequency_probe.py` needs only `--runner`,
+`--sameboy-capture` and a fresh `--output` directory. It authors 12 controls
+covering both pulse channels and CPU speeds, with high-register, low-register
+and unchanged-frequency writes. Each control records 64 immediate/late PCM12
+pairs plus NR52. Optional `--case ch1-high` restricts it to one scenario at both
+speeds. Both tools return 1 for a disagreement, 2 for input/capture errors, and
+keep `qualification=false` even when the comparison succeeds.
+
+`gameboy_cgb_pulse_frequency_probe_contract` and
+`gameboy_samesuite_frequency_reference_contract` run offline. Set
+`GBB_TEST_RUNNER` and `GBB_SAMEBOY_CGB_CAPTURE` to enable native measurements in
+`tests/cgb_pulse_frequency_probe_tests.py`; additionally set
+`GBB_SAMESUITE_ROM_DIR` for `tests/samesuite_frequency_reference_tests.py`.

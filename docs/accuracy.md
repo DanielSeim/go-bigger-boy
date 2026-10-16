@@ -582,6 +582,47 @@ direct core contracts also cover muted output and batched disabled-channel
 clocking. CTest registers `gameboy_cgb_pulse_phase_probe_contract` for the
 offline tools, with an optional complete paired native matrix.
 
+The follow-up `scripts/samesuite_frequency_reference.py` pins the unmodified
+`channel_1_freq_change_timing-cgbDE.gb` from the same v7.0 bundle. It compares
+all 16 packed immediate/late PCM observations and repeated explicit pass/fail
+protocols against SameBoy 1.0.3, using CGB-E and the same owned boot. Eight
+observations run at normal speed and eight at double speed; CGB-D is not
+substituted or claimed. The shared capture code checks a frozen completion
+signature and captures after protocol completion. Before correction only
+observation 10 differed: GBB recorded `0f` and SameBoy `00`. Normal-speed
+observations already matched.
+
+`scripts/cgb_pulse_frequency_probe.py` independently isolates the boundary with
+both pulse channels, frequency-high writes, frequency-low writes and an
+unchanged-frequency high-register control, at both CPU speeds. Each of the 12
+cases sweeps 64 write delays, starting from frequency 2044, duty 12.5% and
+volume 15. PCM12 is read 12 and 96 CPU T-cycles after each write; NR52 is checked
+separately. Timer, interrupts and LCD stay disabled during measurement. Before
+correction, only the two double-speed high-register cases differed, at delay
+indices 48 and 56; both low-register and unchanged-frequency controls matched.
+All observations repeated and both channels agreed after nibble normalization.
+
+CGB-E frequency-high writes now retain the reload collision through the
+current NR52-relative 1-MHz interval, with the countdown still anchored to the
+original clock edge. Frequency-low writes retain the single-clock collision;
+AGB and the other hardware profiles keep their existing path. APU clock phase
+now advances at each cycle in the detailed path and by the full span in the
+batched path, so window closing is independent of tick granularity and muted
+audio. The existing serialized reload flag and clock phase preserve this
+window across save/load without a wire-format change.
+
+All 12 authored cases and the pinned frequency observations/protocols now match.
+The full SameSuite report improves from 55 pass / 21 fail to 56 pass / 20 fail,
+with no previous pass lost; six unsupported revisions and two informational
+entries remain unchanged. In particular, the separate AGB frequency-write test
+still passes. Direct contracts bracket the window at offsets 0..4 for both
+channels, both registers and CGB-E/AGB, using single-cycle and batched ticks.
+Save/load contracts restore inside and immediately outside the window.
+These remain reference comparisons, separate from physical hardware
+qualification and SGB SPC700 audio. The pin is
+`tests/fixtures/external-reference/samesuite-frequency.json`; measured before/
+after evidence is `tests/fixtures/external-reference/cgb-pulse-frequency.json`.
+
 DIV/APU edges are dispatched at their timer-cycle boundary rather than being
 queued until the end of a bus batch. The APU also models the hardware rule that
 enabling it while the DIV/APU input is high skips the first falling-edge event;

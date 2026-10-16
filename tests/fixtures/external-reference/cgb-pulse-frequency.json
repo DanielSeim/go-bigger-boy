@@ -1,0 +1,311 @@
+{
+  "schema": "gbb-pulse-frequency-evidence-v1",
+  "qualification": false,
+  "date": "2026-10-16",
+  "base_commit": "0d694d9",
+  "model": "cgb-e",
+  "sameboy_commit": "208ba4afabffab9edde416f2dbb8ae459e34adb8",
+  "bundle_sha256": "b9a9d7a1075aa35a3d07c07c34974048672d8520dca9e07a50178f5860c3832c",
+  "boot_sha256": "c8937124cd7dcafc036dcad3ad46008ea57b4e76abfa3da6012ff8bdbd7687d0",
+  "adapter_sha256": "7537e97ee26ca54385499cb93212b22201f0e0eb5c7d8e7b0526c875072eb241",
+  "runner_sha256": {
+    "before": "bb9d48cd4b11dcb1bdbc7f7a8fd9f1b00fea0944985e5c8c2914118ac4c111f8",
+    "after": "1c7af3aa49ccf23ab73fd2bfdefd38cf2d9be3da3823cc83c62cbd756061ab4b",
+    "conformance": "e6647fea6509a9a8ee6ca60803c64feb801bb0ce8245e7314b1866cbf0d986ad"
+  },
+  "source_sha256": {
+    "src/apu.cpp": "7a413dd713624e30017128ad38f8f22ad71b9db913449bc65e77cd97dda441a1",
+    "include/gameboy/apu.hpp": "0a32ca87d592efc384338f78f47665d22ec01f2e262ef1b36d92ea88b3b78bfd",
+    "scripts/cgb_pulse_frequency_probe.py": "cbc9157ac9e8e807286f5b808c7bbe49cfd2dd937fe7d37e564de110da8f2005",
+    "scripts/samesuite_alignment_reference.py": "d81c40da41182fd41e80bc23d5e9f6ec9ea5a70de196a4d8136bc1f19098a2e8",
+    "scripts/samesuite_frequency_reference.py": "8ff0e0c9fecc1aeebb7097817cf9523fe930506cfe639564f9d72736e8a90355"
+  },
+  "authored": {
+    "cases": 12,
+    "samples_per_case": 64,
+    "takes_per_core": 2,
+    "executions": 48,
+    "before_matching": 10,
+    "after_matching": 12,
+    "all_repeatable": true,
+    "all_record_checks_pass": true,
+    "rows": [
+      {
+        "scenario": "ch1-high",
+        "double_speed": false,
+        "rom_sha256": "7f47484572b7ea206d89a11ee7c9153b87d9f44ac5992e60359c88d4f6fab83a",
+        "before_sha256": "866fb6f42dde496b8c96c8f281bb3bdefafa3e6108bfb16f86b8c45b8014404e",
+        "after_sha256": "866fb6f42dde496b8c96c8f281bb3bdefafa3e6108bfb16f86b8c45b8014404e",
+        "sameboy_sha256": "866fb6f42dde496b8c96c8f281bb3bdefafa3e6108bfb16f86b8c45b8014404e",
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-low",
+        "double_speed": false,
+        "rom_sha256": "c370528e31ea82c3ab7d91a2da1ee967b36ea0e6a42d1a646d5b23ceaf44177f",
+        "before_sha256": "7981482d277bd9e667c1cb804f1fa19c061692af9a1af730059ae1b29362861b",
+        "after_sha256": "7981482d277bd9e667c1cb804f1fa19c061692af9a1af730059ae1b29362861b",
+        "sameboy_sha256": "7981482d277bd9e667c1cb804f1fa19c061692af9a1af730059ae1b29362861b",
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-control",
+        "double_speed": false,
+        "rom_sha256": "de06ded421e5302645f5c93c6b85cf440ba844e62fad03d568a4fcadf7bd9015",
+        "before_sha256": "c4d396ec4242e9a62552cb4acf3e38e8375b8214d28f0cd092d50c92292f6e37",
+        "after_sha256": "c4d396ec4242e9a62552cb4acf3e38e8375b8214d28f0cd092d50c92292f6e37",
+        "sameboy_sha256": "c4d396ec4242e9a62552cb4acf3e38e8375b8214d28f0cd092d50c92292f6e37",
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-high",
+        "double_speed": false,
+        "rom_sha256": "d0d85090e2792ea479a2cf15e1afb2f6cc4fecff20aaef103066500dbb4c99a7",
+        "before_sha256": "866fb6f42dde496b8c96c8f281bb3bdefafa3e6108bfb16f86b8c45b8014404e",
+        "after_sha256": "866fb6f42dde496b8c96c8f281bb3bdefafa3e6108bfb16f86b8c45b8014404e",
+        "sameboy_sha256": "866fb6f42dde496b8c96c8f281bb3bdefafa3e6108bfb16f86b8c45b8014404e",
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-low",
+        "double_speed": false,
+        "rom_sha256": "ee06d0d74565a8d517609e102fda28cad8ef16e7a456c104947bc4a3b3dc8aa9",
+        "before_sha256": "7981482d277bd9e667c1cb804f1fa19c061692af9a1af730059ae1b29362861b",
+        "after_sha256": "7981482d277bd9e667c1cb804f1fa19c061692af9a1af730059ae1b29362861b",
+        "sameboy_sha256": "7981482d277bd9e667c1cb804f1fa19c061692af9a1af730059ae1b29362861b",
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-control",
+        "double_speed": false,
+        "rom_sha256": "a98f3b14594735179804dcc98888efd08b2101cabfd146118db4cf25e454123e",
+        "before_sha256": "c4d396ec4242e9a62552cb4acf3e38e8375b8214d28f0cd092d50c92292f6e37",
+        "after_sha256": "c4d396ec4242e9a62552cb4acf3e38e8375b8214d28f0cd092d50c92292f6e37",
+        "sameboy_sha256": "c4d396ec4242e9a62552cb4acf3e38e8375b8214d28f0cd092d50c92292f6e37",
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-high",
+        "double_speed": true,
+        "rom_sha256": "8415c83e46d1f3b458e65e15976e340684585bab7bfbda43e0c60121a90f66b4",
+        "before_sha256": "e3cebea0ac2d8ffbdbda9e25ec59a1d11295a0eac9dd8a70fba6a8e85eb240b0",
+        "after_sha256": "12a25172c1396e421f90a81a5b690f8c4bcf42a0dc65c04a37eb91fb24675de7",
+        "sameboy_sha256": "12a25172c1396e421f90a81a5b690f8c4bcf42a0dc65c04a37eb91fb24675de7",
+        "before_differences": [
+          {
+            "index": 48,
+            "gbb": [
+              0,
+              15
+            ],
+            "sameboy": [
+              0,
+              0
+            ]
+          },
+          {
+            "index": 56,
+            "gbb": [
+              15,
+              0
+            ],
+            "sameboy": [
+              15,
+              15
+            ]
+          }
+        ],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-low",
+        "double_speed": true,
+        "rom_sha256": "926ec3be9ec0bc877a887e56cd6d7b48751d6b7380bfcfb697df2334eccc2fdd",
+        "before_sha256": "138abc7594cf45411daf9a724af52c4d5a00e38ed85b3c12f18abb02e32b633c",
+        "after_sha256": "138abc7594cf45411daf9a724af52c4d5a00e38ed85b3c12f18abb02e32b633c",
+        "sameboy_sha256": "138abc7594cf45411daf9a724af52c4d5a00e38ed85b3c12f18abb02e32b633c",
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch1-control",
+        "double_speed": true,
+        "rom_sha256": "655d8f35afefb09c926bb7e94de9418d005891a44595ce5227241442571e89d5",
+        "before_sha256": "6b12a3afea768c77bf70e620250a2a4e33bfb8e8fd41e2d0a33ad294d6352c59",
+        "after_sha256": "6b12a3afea768c77bf70e620250a2a4e33bfb8e8fd41e2d0a33ad294d6352c59",
+        "sameboy_sha256": "6b12a3afea768c77bf70e620250a2a4e33bfb8e8fd41e2d0a33ad294d6352c59",
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-high",
+        "double_speed": true,
+        "rom_sha256": "5d8b88abf5e3029aef49c15b04b7adbd4bcea155e5cdd9d444fec8723d3d9a21",
+        "before_sha256": "e3cebea0ac2d8ffbdbda9e25ec59a1d11295a0eac9dd8a70fba6a8e85eb240b0",
+        "after_sha256": "12a25172c1396e421f90a81a5b690f8c4bcf42a0dc65c04a37eb91fb24675de7",
+        "sameboy_sha256": "12a25172c1396e421f90a81a5b690f8c4bcf42a0dc65c04a37eb91fb24675de7",
+        "before_differences": [
+          {
+            "index": 48,
+            "gbb": [
+              0,
+              15
+            ],
+            "sameboy": [
+              0,
+              0
+            ]
+          },
+          {
+            "index": 56,
+            "gbb": [
+              15,
+              0
+            ],
+            "sameboy": [
+              15,
+              15
+            ]
+          }
+        ],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-low",
+        "double_speed": true,
+        "rom_sha256": "0967f30a0f27f10f09c5780a25589a9f4b04ce1c88918356af269d714faeb8a1",
+        "before_sha256": "138abc7594cf45411daf9a724af52c4d5a00e38ed85b3c12f18abb02e32b633c",
+        "after_sha256": "138abc7594cf45411daf9a724af52c4d5a00e38ed85b3c12f18abb02e32b633c",
+        "sameboy_sha256": "138abc7594cf45411daf9a724af52c4d5a00e38ed85b3c12f18abb02e32b633c",
+        "before_differences": [],
+        "after_differences": []
+      },
+      {
+        "scenario": "ch2-control",
+        "double_speed": true,
+        "rom_sha256": "97ffe1de6298a3b4ed9a07b46d27195d40600c4908e7bd2de60782b5485b528a",
+        "before_sha256": "6b12a3afea768c77bf70e620250a2a4e33bfb8e8fd41e2d0a33ad294d6352c59",
+        "after_sha256": "6b12a3afea768c77bf70e620250a2a4e33bfb8e8fd41e2d0a33ad294d6352c59",
+        "sameboy_sha256": "6b12a3afea768c77bf70e620250a2a4e33bfb8e8fd41e2d0a33ad294d6352c59",
+        "before_differences": [],
+        "after_differences": []
+      }
+    ]
+  },
+  "pinned": {
+    "rom": {
+      "path": "apu/channel_1/channel_1_freq_change_timing-cgbDE.gb",
+      "sha256": "2e33d96be99729bcb29ef16c340ae2b29b01a8cdc126ae33e755eaabae07c8ce",
+      "channel": 1,
+      "group_variable": "frequency_high_write_delay",
+      "phase_nops": [],
+      "sample_delay_nops": [
+        [
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29
+        ],
+        [
+          50,
+          51,
+          52,
+          53,
+          54,
+          55,
+          56,
+          57
+        ]
+      ]
+    },
+    "before_gbb": [
+      0,
+      0,
+      0,
+      15,
+      255,
+      255,
+      255,
+      240,
+      0,
+      0,
+      15,
+      15,
+      15,
+      15,
+      15,
+      255
+    ],
+    "sameboy": [
+      0,
+      0,
+      0,
+      15,
+      255,
+      255,
+      255,
+      240,
+      0,
+      0,
+      0,
+      15,
+      15,
+      15,
+      15,
+      255
+    ],
+    "before_differences": [
+      10
+    ],
+    "after_differences": [],
+    "both_protocols_pass_after": true
+  },
+  "samesuite": {
+    "common_cases": 84,
+    "before": {
+      "passed": 55,
+      "failed": 21,
+      "unsupported": 6,
+      "info": 2
+    },
+    "after": {
+      "passed": 56,
+      "failed": 20,
+      "unsupported": 6,
+      "info": 2
+    },
+    "pass_to_failure": 0,
+    "changes": [
+      {
+        "case": "apu_channel_1_channel_1_freq_change_timing-cgbDE.gb-cgb-e",
+        "before": "FAIL",
+        "after": "PASS"
+      }
+    ]
+  },
+  "limits": [
+    "Reference comparisons only; no physical hardware qualification.",
+    "Authored controls start from period 16; existing suite and waveform contracts cover other scenarios.",
+    "Source was uncommitted when measured; hashes identify the measured core and tooling."
+  ],
+  "conformance": {
+    "passed": 168,
+    "failed": 0
+  },
+  "alignment_controls": {
+    "authored_cases": 64,
+    "all_match": true,
+    "pinned_tests": 4,
+    "all_match_pinned": true
+  }
+}
