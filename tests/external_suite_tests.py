@@ -5,6 +5,9 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import hashlib
+import subprocess
+from unittest.mock import patch
 from pathlib import Path
 import sys
 import tempfile
@@ -24,6 +27,37 @@ MANIFEST = json.loads(
 
 
 class ExternalSuiteDiscoveryTests(unittest.TestCase):
+    def test_bullygb_ci_download_matches_manifest_pin(self):
+        config = MANIFEST['suites']['bullygb']
+        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/desktop-builds.yml').read_text()
+        self.assertIn(config['rom_url'], workflow)
+        self.assertIn(config['rom_sha256'] + '  test-roms/bullygb/bully.gb', workflow)
+        self.assertRegex(config['commit'], r'^[0-9a-f]{40}$')
+        self.assertRegex(config['rom_sha256'], r'^[0-9a-f]{64}$')
+        self.assertEqual(config['gate'], 'research')
+
+    def test_bullygb_discovery_requires_pinned_hash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rom = root / 'bully.gb'
+            config = dict(MANIFEST['suites']['bullygb'])
+            self.assertTrue(all(c.status == 'fail' for c in MODULE.bullygb_cases(root, config)))
+            rom.write_bytes(b'authored fixture')
+            self.assertTrue(all(c.status == 'fail' for c in MODULE.bullygb_cases(root, config)))
+            config['rom_sha256'] = hashlib.sha256(rom.read_bytes()).hexdigest()
+            cases = MODULE.bullygb_cases(root, config)
+            self.assertEqual(len(cases), 6)
+            self.assertTrue(all(c.kind == 'bullygb' and c.status == 'pending' for c in cases))
+            case = cases[0]
+            for output, exit_code, status in (('PASS (BullyGB) result=All tests OK!\n', 0, 'pass'),
+                    ('Captured frame 600', 0, 'fail'), ('FAIL (BullyGB) result=Invalid initial DIV', 1, 'fail')):
+                with patch.object(MODULE.subprocess, 'run', return_value=
+                        subprocess.CompletedProcess([], exit_code, output)) as run:
+                    actual = MODULE.run_case(case, Path('/runner'), root / 'logs')
+                    self.assertEqual(actual.status, status)
+                    command = run.call_args.args[0]
+                    self.assertEqual(command[command.index('--protocol') + 1], 'bullygb')
+
     def test_age_model_suffixes_preserve_supported_profiles(self) -> None:
         self.assertEqual(MODULE.age_models("foo-dmgC-cgbBCE"),
                          (["dmg", "cgb-c", "cgb-e"], False))

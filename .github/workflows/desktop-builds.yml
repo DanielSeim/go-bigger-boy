@@ -101,7 +101,7 @@ jobs:
           retention-days: 14
 
   external-suites:
-    name: AGE and SameSuite research suites
+    name: AGE, SameSuite and BullyGB research suites
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -119,6 +119,12 @@ jobs:
 
       - name: Extract test ROM bundle
         run: unzip -q test-roms.zip -d test-roms
+
+      - name: Download and verify pinned BullyGB v1.2
+        run: |
+          mkdir -p test-roms/bullygb
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 120 --connect-timeout 20 --max-time 300 https://github.com/Ashiepaws/BullyGB/releases/download/v1.2/bully.gb --output test-roms/bullygb/bully.gb
+          echo "05fb33ea49aaefe6a42f7619dbab85ec309a6e49ca961c649e8525a52a79a3e1  test-roms/bullygb/bully.gb" | sha256sum --check -
 
       - name: Configure external suite harness
         run: >-

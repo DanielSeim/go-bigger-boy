@@ -12,6 +12,25 @@
       "kind": "samesuite",
       "max_cycles": 15000000,
       "gate": "research"
+    },
+    "bullygb": {
+      "root": "bullygb",
+      "kind": "bullygb",
+      "max_cycles": 20000000,
+      "gate": "research",
+      "repository": "https://github.com/Ashiepaws/BullyGB",
+      "tag": "v1.2",
+      "commit": "a9dccf7fb2b68b7bb4c0cbe98248383087e70a13",
+      "rom_url": "https://github.com/Ashiepaws/BullyGB/releases/download/v1.2/bully.gb",
+      "rom_sha256": "05fb33ea49aaefe6a42f7619dbab85ec309a6e49ca961c649e8525a52a79a3e1",
+      "models": [
+        "dmg",
+        "mgb",
+        "cgb0",
+        "cgb-c",
+        "cgb-e",
+        "agb"
+      ]
     }
   }
 }

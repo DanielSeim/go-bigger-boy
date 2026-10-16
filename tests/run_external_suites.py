@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the metadata-driven AGE and SameSuite research suites.
+"""Run the metadata-driven AGE, SameSuite and BullyGB research suites.
 
 The external bundles deliberately remain outside the repository.  This runner
 discovers their ROMs from the pinned bundle layout and keeps suite-specific
@@ -14,6 +14,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import json
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -188,6 +189,16 @@ def samesuite_cases(root: Path, config: dict) -> List[Case]:
     return cases
 
 
+def bullygb_cases(root: Path, config: dict) -> List[Case]:
+    rom = root / "bully.gb"
+    valid = rom.is_file() and hashlib.sha256(rom.read_bytes()).hexdigest() == config["rom_sha256"]
+    return [Case("bullygb", "bullygb-" + model, rom, model, None, False,
+                 "bullygb", config["max_cycles"], config["gate"],
+                 "pending" if valid else "fail",
+                 "" if valid else "missing ROM or SHA-256 mismatch against pinned v1.2")
+            for model in config["models"]]
+
+
 def discover_cases(
         rom_root: Path, same_suite_root: Optional[Path], manifest: dict,
         selected: Sequence[str]) -> List[Case]:
@@ -198,6 +209,10 @@ def discover_cases(
             root = rom_root / config["root"]
             if root.is_dir():
                 cases.extend(age_cases(root, config))
+        elif suite == "bullygb":
+            root = rom_root / config["root"]
+            if root.is_dir():
+                cases.extend(bullygb_cases(root, config))
         elif suite == "same-suite":
             root = same_suite_root or (rom_root / config["root"])
             if root.is_dir():
@@ -252,6 +267,8 @@ def failure_cluster(case: Case) -> str:
             if marker in name:
                 return label
         return "same-suite/other"
+    if case.suite == "bullygb":
+        return "bullygb/aggregate"
     return "other"
 
 
@@ -275,7 +292,7 @@ def run_case(case: Case, runner: Path, output_dir: Path) -> Case:
     else:
         command = [
             str(runner), str(case.rom), "--max-cycles", str(case.max_cycles),
-            "--protocol", "mooneye", "--model", case.model,
+            "--protocol", "bullygb" if case.kind == "bullygb" else "mooneye", "--model", case.model,
         ]
     output_dir.mkdir(parents=True, exist_ok=True)
     log_path = output_dir / f"{case.case_id}.log"
@@ -299,6 +316,9 @@ def run_case(case: Case, runner: Path, output_dir: Path) -> Case:
     status = ("pass" if result.returncode == 0 else
               "timeout" if result.returncode == 2 and "TIMEOUT" in output
               else "fail")
+    if case.kind == "bullygb" and status == "pass" and "PASS (BullyGB) result=All tests OK!" not in output.splitlines():
+        status = "fail"
+        detail = "missing explicit BullyGB completion result"
     if status != "pass":
         detail = f"{detail} (log: {log_path.name})"
     return Case(**{**case.__dict__, "status": status, "detail": detail})
@@ -351,7 +371,7 @@ def main() -> int:
                         default=Path(__file__).with_name("external_suite_manifest.json"))
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--suite", action="append",
-                        choices=("age-test-roms", "same-suite"))
+                        choices=("age-test-roms", "same-suite", "bullygb"))
     parser.add_argument("--jobs", type=int,
                         default=min(8, os.cpu_count() or 1))
     parser.add_argument("--list", action="store_true")

@@ -25,7 +25,7 @@ option(GAMEBOY_ENABLE_MODEL_MATRIX
 option(GAMEBOY_ENABLE_DISCOVERED_CONFORMANCE
        "Register every discovered external ROM as an individual CTest case" OFF)
 option(GAMEBOY_ENABLE_EXTERNAL_SUITES
-       "Run metadata-driven AGE and SameSuite research suites" OFF)
+       "Run metadata-driven AGE, SameSuite and BullyGB research suites" OFF)
 option(GAMEBOY_BUILD_SDL "Build the SDL3 desktop frontend when SDL3 is available" ON)
 option(GAMEBOY_ENABLE_SANITIZERS
        "Enable AddressSanitizer and UndefinedBehaviorSanitizer for native builds"
@@ -725,6 +725,11 @@ if(GAMEBOY_BUILD_TESTS)
                              ${CMAKE_CURRENT_SOURCE_DIR}/tests/mmm01_diagnostics_tests.py
                              $<TARGET_FILE:gameboy_test_runner>)
             set_tests_properties(gameboy_mmm01_diagnostics PROPERTIES TIMEOUT 90)
+            add_test(NAME gameboy_bullygb_protocol
+                     COMMAND ${Python3_EXECUTABLE}
+                             ${CMAKE_CURRENT_SOURCE_DIR}/tests/bullygb_protocol_tests.py
+                             $<TARGET_FILE:gameboy_test_runner>)
+            set_tests_properties(gameboy_bullygb_protocol PROPERTIES TIMEOUT 90)
             add_test(NAME gameboy_cycle_frame_capture
                      COMMAND ${Python3_EXECUTABLE}
                              ${CMAKE_CURRENT_SOURCE_DIR}/tests/cycle_frame_capture_tests.py

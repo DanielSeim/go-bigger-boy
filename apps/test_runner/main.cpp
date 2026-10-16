@@ -35,7 +35,8 @@ enum class Protocol {
     mooneye_wilbertpol,
     serial,
     blargg,
-    gbmicrotest
+    gbmicrotest,
+    bullygb
 };
 
 struct Options {
@@ -76,7 +77,7 @@ struct Options {
 void usage() {
     std::cerr << "Usage: gbb_test_runner <rom.gb> "
                  "[--max-cycles N] [--protocol auto|mooneye|"
-                 "mooneye-wilbertpol|serial|blargg|gbmicrotest] "
+                 "mooneye-wilbertpol|serial|blargg|gbmicrotest|bullygb] "
                  "[--model auto|dmg0|dmg|mgb|sgb|sgb2|cgb0|cgb-c|cgb-e|agb0|agb] "
                  "[--frames N --frame-output capture.ppm [--sgb-frame]] "
                  "[--cycle-frame-capture N --frame-output capture.ppm [--sgb-frame]] "
@@ -135,6 +136,7 @@ Options parse_options(const int argc, char** argv) {
             else if (value == "mooneye") options.protocol = Protocol::mooneye;
             else if (value == "mooneye-wilbertpol")
                 options.protocol = Protocol::mooneye_wilbertpol;
+            else if (value == "bullygb") options.protocol = Protocol::bullygb;
             else if (value == "serial") options.protocol = Protocol::serial;
             else if (value == "blargg") options.protocol = Protocol::blargg;
             else if (value == "gbmicrotest")
@@ -1078,6 +1080,40 @@ int main(int argc, char** argv) {
                 std::cout << "Captured LD B,B framebuffer to "
                           << options.frame_output << '\n';
                 return finish_run(EXIT_SUCCESS);
+            }
+            // BullyGB v1.2 prints ASCII tile IDs, enables LCD and enters JR @.
+            // It writes SB without starting a serial transfer. Inspect only the
+            // explicit protocol's terminal screen, using read-only VRAM access.
+            if (!captures_frame && options.protocol == Protocol::bullygb) {
+                const auto pc = emulator.cpu().registers().pc;
+                const auto& bus = emulator.bus();
+                if (pc < 0x7FFF && (bus.read8(0xFF40) & 0x80) != 0 &&
+                    bus.read8(pc) == 0x18 && bus.read8(pc + 1) == 0xFE) {
+                    std::string text;
+                    bool finished = false;
+                    bool invalid_text = false;
+                    for (unsigned row = 0; row < 18 && !finished; ++row) {
+                        for (unsigned column = 0; column < 18; ++column) {
+                            const auto ch = bus.debug_read_vram(0,
+                                static_cast<std::uint16_t>(0x1821 + row * 32 + column));
+                            if (ch < 32 || ch > 126) {
+                                invalid_text = ch != 0;
+                                finished = true;
+                                break;
+                            }
+                            text.push_back(static_cast<char>(ch));
+                        }
+                    }
+                    while (!text.empty() && text.back() == ' ') text.pop_back();
+                    if (!text.empty()) {
+                        const auto success = !invalid_text && text == "All tests OK!";
+                        auto& output = success ? std::cout : std::cerr;
+                        output << (success ? "PASS" : "FAIL")
+                               << " (BullyGB) result=" << text
+                               << (invalid_text ? " [invalid tile]" : "") << '\n';
+                        return finish_run(success ? EXIT_SUCCESS : EXIT_FAILURE);
+                    }
+                }
             }
             const bool watches_blargg =
                 !captures_frame &&

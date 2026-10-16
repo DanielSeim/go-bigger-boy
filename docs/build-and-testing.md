@@ -281,7 +281,7 @@ all 6 applicable CGB misc ROMs, all 28 emulator-only mapper ROMs, 38 curated
 Blargg ROMs, and 21 exact Acid2/Scribbltests/Mealybug/Gambatte framebuffer
 comparisons. The separate [hardware-model matrix workflow](https://github.com/DanielSeim/go-bigger-boy/actions/workflows/hardware-model-matrix.yml)
 evaluates additional GBMicrotest and Mooneye-wilbertpol cases. The desktop
-workflow also publishes a research report for AGE and SameSuite: it discovers
+workflow also publishes a research report for AGE, SameSuite and BullyGB: it discovers
 AGE screenshot references, applies its DMG-compatibility color rules, maps
 SameSuite diagnostics to documented hardware profiles, and keeps exploratory
 failures outside the release gate (see the [accuracy report](accuracy.md)).
@@ -301,7 +301,7 @@ cmake --build build-conformance
 ctest --test-dir build-conformance -L conformance --output-on-failure
 ```
 
-To run the metadata-driven AGE and SameSuite research harness locally, add
+To run the metadata-driven AGE, SameSuite and BullyGB research harness locally, add
 `-DGAMEBOY_ENABLE_EXTERNAL_SUITES=ON` to the configure command and run:
 
 ```sh
@@ -544,3 +544,61 @@ Compare captures from two builds or devices without rerunning the ROM:
 
 The command reports the first differing write, checkpoint hash, diagnostic
 counter, or decoded command packet.
+
+### BullyGB external research suite
+
+[BullyGB](https://github.com/Ashiepaws/BullyGB) v1.2 is included in the external
+research harness. Its ROM stays outside this repository. The manifest pins
+release source commit `a9dccf7fb2b68b7bb4c0cbe98248383087e70a13` and the official
+`bully.gb` SHA-256 `05fb33ea49aaefe6a42f7619dbab85ec309a6e49ca961c649e8525a52a79a3e1`.
+Download the upstream release into your external ROM root:
+
+```sh
+mkdir -p /external/test-roms/bullygb
+curl --fail --location https://github.com/Ashiepaws/BullyGB/releases/download/v1.2/bully.gb \
+  --output /external/test-roms/bullygb/bully.gb
+python3 tests/run_external_suites.py --runner ./build/gbb_test_runner \
+  --rom-root /external/test-roms --suite bullygb \
+  --output /external/bullygb-report.md
+```
+
+Discovery verifies the ROM hash before execution. A missing or altered ROM inside
+that directory is reported as failure. The existing external-suite CI job downloads
+and verifies this separate asset, runs it alongside AGE/SameSuite, and publishes
+the report and full logs. Ordinary offline tests need no external ROMs or network.
+
+BullyGB is one sequential aggregate ROM: it stops on the first error, so six
+model runs do not imply that every individual subtest executed. The selected
+profiles are DMG, MGB, CGB0/CGB-C/CGB-E and AGB. SGB profiles are excluded until
+their firmware/handoff prerequisites are explicitly configured. BullyGB itself
+has broad CGB applicability rather than revision-specific expectations; these
+profiles are observations, not independent hardware qualification.
+
+`--protocol bullygb` is explicit and leaves automatic/Mooneye/serial protocols
+unchanged. Upstream prints ASCII tile IDs starting at BG map address 9821,
+wraps after 18 characters, enables the LCD and enters a `JR @` loop. It writes
+SB without starting serial transfers, so ordinary serial success detection is
+unsuitable. The adapter uses read-only VRAM access at the terminal loop and
+requires the exact screen text `All tests OK!`; other nonempty results fail,
+while incomplete/nonterminal output times out. Frame/cycle capture modes retain
+their own completion rules. Protocol return codes are success 0, failure 1 and
+cycle timeout 2.
+
+Keep this suite in the **research** lane. Its initial DIV/VRAM/RAM and boot-register
+checks depend on power-on/boot state; upstream explicitly marks some DIV model
+expectations unconfirmed. The harness uses GBB's default startup profiles, without
+proprietary boot images or modified upstream test code. A failure should be
+investigated against the documented startup assumptions before changing core
+behavior. No tests are bypassed and no expected failures are converted into passes.
+
+Authored protocol fixtures cover exact success, wrapped error text, false-success
+suffixes, incomplete screens, opt-in behavior and capture-mode isolation. They
+are registered as `gameboy_bullygb_protocol`; external discovery/hash/protocol
+contracts remain in `gameboy_external_suite_harness`.
+
+Local validation of the pinned unmodified v1.2 ROM found six aggregate failures:
+DMG/MGB report `Uninitialized RAM not randomized`; CGB0/CGB-C/CGB-E/AGB report
+`Invalid initial   DIV`. Every run reached an explicit terminal error, rather
+than timing out. These are baseline observations with the default startup
+profiles, not exemptions or complete subtest coverage. Emulator startup behavior
+was left unchanged by the suite integration.

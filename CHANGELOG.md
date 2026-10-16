@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Add pinned BullyGB v1.2 to the external research suite and CI report, with
+  verified ROM hashes and an explicit read-only terminal-screen result protocol.
+
 - Add reproducible CGB hardware DIV-witness ROMs with boot-compatible headers,
   visible raw results, completion-only Mooneye signatures and a bounded missing-IRQ
   failure path; leave the disputed hardware timing outcome unclassified.
