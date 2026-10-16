@@ -600,11 +600,67 @@ GBB_SAMEBOY_CGB_CAPTURE=/external/sameboy-cgb-capture \
   python3 tests/gbvisualizer_reference_tools_tests.py
 ```
 
-Next decouple timer-start padding from read padding in the authored boundary
-probe, so foreground DI code can hit the same fast reload slot as the HALT case.
-That will separate a reload-read sampling difference from HALT wake-up before
-any further timing correction. Keep STAT arbitration and double-speed LY
-boundaries as separate questions.
+## Independent foreground phase matrix
+
+The boundary probe now accepts `--independent-phases`: a foreground-only matrix
+with separate 0–3 NOP delays before enabling the timer and before recording reads.
+All cases keep IME off and IE zero. Three TMA values × four start phases × four
+read phases × two CPU speeds give 96 paired cases and 384 captures. The original
+coupled foreground/HALT matrix remains the default; all 48 default ROM images
+were checked byte-for-byte against the preceding committed version.
+
+```sh
+python3 scripts/cgb_timer_boundary_probe.py \
+  --runner ./build/gbb_test_runner \
+  --sameboy-capture /external/sameboy-cgb-capture \
+  --output /external/cgb-independent-phase-results --independent-phases
+```
+
+`--case` runs one case from the selected matrix. A minimal foreground control for
+the fast reload slot is:
+
+```sh
+python3 scripts/cgb_timer_boundary_probe.py \
+  --runner ./build/gbb_test_runner \
+  --sameboy-capture /external/sameboy-cgb-capture \
+  --output /external/cgb-foreground-reload-control \
+  --independent-phases --case poll-fe-start-0-read-1
+```
+
+Its first predicted TIMA read is at DIV-relative CPU T-cycle 52, followed by reads
+every 80 cycles. The same end-of-bus-cycle model puts indices 1, 3, 5 and 7 on
+reload instants at 132, 292, 452 and 612. Both emulators read alternating FF/FE.
+The start=2/read=3 control instead starts at cycle 68 and reads FE/FF alternately;
+both emulators agree there too. These are not frame offsets or predictions fitted
+to SameBoy; the instruction-cost model and new phase cases were defined before
+the paired measurements.
+
+Local results on 2026-10-16: **all 96 foreground cases match**, all model predictions
+match, and every capture repeats exactly. Normal/double-speed event sequences
+agree within each emulator. By contrast, the original HALT/FE/phase-0 control
+still reads FE in GBB and 00 in SameBoy at its predicted reload instants. The
+foreground experiment therefore did not reproduce the difference, even when
+sampling predicted reload slots. This narrows the investigation to HALT wake-up
+or hardware-interrupt-entry phase in the tested controls; it does not establish
+which emulator is correct or prove that HALT is the sole cause.
+
+The independent report has schema `gbb-cgb-timer-independent-phase-probe-v1`,
+separate start/read phase fields and explicit IME-off/IE-zero sampling assumptions.
+It retains the same provenance, guard, completion and repeatability checks.
+The full foreground run and the minimal case return 0; any paired or predictive
+model mismatch still returns 1 with `qualification=false`. An invalid `--case`
+returns 2 before creating output. No CPU, PPU or timer behavior changed.
+
+The existing offline boundary contract now checks phase coverage, coupled ROM
+equivalence, read-time calculations, case validation and CLI forwarding. Optional
+native tests cover the original matrix plus uncoupled reload/control cases without
+requiring today's reference mismatch to remain forever.
+
+Next compare interrupt-enabled busy waiting with HALT at the same timer overflow,
+then add an IME-disabled HALT wake-up control. That will separate wake-up from
+dispatch effects. Validate those observations against pinned HALT/interrupt timing
+conformance tests before changing core timing; keep STAT and double-speed LY
+questions separate.
 
 Keep three results separate: GBB's own deterministic screenshot regression,
 GBB-versus-SameBoy frame/PCM behavior, and audio waveform comparison. In

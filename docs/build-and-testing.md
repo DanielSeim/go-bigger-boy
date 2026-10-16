@@ -345,6 +345,9 @@ validation limits documented in the same guide.
 suite's provenance and explicit pass/fail handling. Its five Mooneye tests pass
 in both emulators on three CGB revisions; that evidence does not adjudicate the
 separate fast-timer HALT read collision. Public CI needs no external checkouts.
+The boundary tool also offers `--independent-phases` and `--case` for a foreground
+DI phase matrix and minimal reproductions. Its 96 paired foreground cases match;
+the original HALT distinction remains separate and unresolved.
 
 ## Hardware-model matrix
 

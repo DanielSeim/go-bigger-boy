@@ -40,6 +40,38 @@ class ProbeContracts(unittest.TestCase):
         self.assertEqual(probe.expected_timer('halt', 254, 0),
                          [[255 if i % 2 == 0 else 254, 4] for i in range(8)])
 
+    def test_independent_matrix_coverage_and_coupled_equivalence(self):
+        self.assertEqual(len(probe.INDEPENDENT_SCENARIOS), 48)
+        self.assertEqual(len({probe.probe_rom(s, speed) for speed in (False, True)
+                              for s in probe.INDEPENDENT_SCENARIOS}), 96)
+        for modulo in (0, 226, 254):
+            for phase in range(4):
+                for speed in (False, True):
+                    legacy = probe.probe_rom(f'poll-{modulo:02x}-phase-{phase}', speed)
+                    independent = probe.probe_rom(f'poll-{modulo:02x}-start-{phase}-read-{phase}', speed)
+                    self.assertEqual(legacy, independent)
+
+    def test_independent_padding_hits_reload_without_halt(self):
+        self.assertEqual(probe.read_times('poll', 0, 1), [52 + 80 * i for i in range(8)])
+        self.assertEqual(probe.read_times('poll', 2, 3), [68 + 80 * i for i in range(8)])
+        self.assertEqual(probe.expected_timer('poll', 254, 0, 1),
+                         [[255 if i % 2 == 0 else 254, 4] for i in range(8)])
+        self.assertEqual(probe.expected_timer('poll', 254, 2, 3),
+                         [[254 if i % 2 == 0 else 255, 4] for i in range(8)])
+        data = self.memory(probe.expected_timer('poll', 254, 0, 1))
+        result = probe.analyze(data, 'poll-fe-start-0-read-1', 2)
+        self.assertEqual((result['start_phase_nops'], result['read_phase_nops']), (0, 1))
+        self.assertIn('IME_off; IE_zero', result['prediction_assumptions'])
+        self.assertNotIn('HALT', result['prediction_assumptions'])
+
+    def test_case_validation_fails_before_execution(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / 'results'
+            with self.assertRaisesRegex(ValueError, 'selected phase matrix'):
+                probe.run_probe(Path('/unused'), Path('/unused'), output,
+                                independent_phases=True, case='halt-fe-phase-0')
+            self.assertFalse(output.exists())
+
     @staticmethod
     def memory(values):
         data = bytearray(8192)
@@ -75,11 +107,43 @@ class ProbeContracts(unittest.TestCase):
                     '--sameboy-capture', '/unused', '--output', '/unused']), \
                 contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(probe.main(), 1)
+        with patch.object(probe, 'run_probe', return_value=report) as run, \
+                patch.object(sys, 'argv', ['probe', '--runner', '/unused',
+                    '--sameboy-capture', '/unused', '--output', '/unused',
+                    '--independent-phases', '--case', 'poll-fe-start-0-read-1']), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(probe.main(), 1)
+        self.assertTrue(run.call_args.kwargs['independent_phases'])
+        self.assertEqual(run.call_args.kwargs['case'], 'poll-fe-start-0-read-1')
 
 
 @unittest.skipUnless(os.environ.get('GBB_TEST_RUNNER') and os.environ.get('GBB_SAMEBOY_CGB_CAPTURE'),
                      'set GBB_TEST_RUNNER and GBB_SAMEBOY_CGB_CAPTURE for native boundary measurements')
 class NativeProbeContracts(unittest.TestCase):
+    def test_uncoupled_foreground_collision_and_control(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for case in ('poll-fe-start-0-read-1', 'poll-fe-start-2-read-3', 'poll-00-start-0-read-1'):
+                report = probe.run_probe(Path(os.environ['GBB_TEST_RUNNER']).resolve(),
+                                         Path(os.environ['GBB_SAMEBOY_CGB_CAPTURE']).resolve(),
+                                         Path(tmp) / case, independent_phases=True, case=case)
+                self.assertEqual(report['schema'], 'gbb-cgb-timer-independent-phase-probe-v1')
+                self.assertEqual(len(report['rows']), 2)
+                self.assertFalse(report['qualification'])
+                for row in report['rows']:
+                    a, b = (row['captures'][name]['events'] for name in ('gbb', 'sameboy'))
+                    self.assertEqual(row['match'], a == b)
+                    self.assertEqual(row['different_event_indices'], [i for i in range(8) if a[i] != b[i]])
+                    for capture in row['captures'].values():
+                        self.assertTrue(capture['repeatable'])
+                        self.assertTrue(capture['record_structure_match'])
+                        self.assertIn('IME_off; IE_zero', capture['prediction_assumptions'])
+                        self.assertEqual(capture['timer_oracle_match'], capture['events'] == capture['expected_timer'])
+                        if case.startswith('poll-00'):
+                            self.assertTrue(capture['timer_oracle_match'])
+                for name in ('gbb', 'sameboy'):
+                    self.assertEqual(report['rows'][0]['captures'][name]['events'],
+                                     report['rows'][1]['captures'][name]['events'])
+
     def test_reads_repeat_and_differences_remain_explicit(self):
         with tempfile.TemporaryDirectory() as tmp:
             report = probe.run_probe(Path(os.environ['GBB_TEST_RUNNER']).resolve(),

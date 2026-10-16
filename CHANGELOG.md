@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add independent timer-start/read phase sweeps and single-case captures to the
+  authored CGB boundary probe, preserving existing ROMs and reporting foreground
+  reload-read differences without assuming HALT is their cause.
+
 - Add opt-in pinned Mooneye timer builds and explicit SameBoy Mooneye result
   detection, with repeatable CGB0/CGB-C/CGB-E comparisons and offline fail-closed
   contracts; retain the unresolved fast-timer HALT sampling case separately.
