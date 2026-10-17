@@ -739,8 +739,9 @@ remain unchanged; these longer controls explicitly request larger bounded
 budgets. The subsequent instruction-window measurements below resolve the
 reference intervals before changing the CPU/APU model.
 
-`scripts/cgb_stop_timing_probe.py` now measures a single STOP/NOP operation and
-resumed instruction on the unchanged `9b579d8` core. The optional reference
+`scripts/cgb_stop_timing_probe.py` first measured a single STOP/NOP operation and
+resumed instruction on the unchanged `9b579d8` core. This is the pre-transition
+baseline. The optional reference
 adapter's `--pc-clock-window` mode uses public execution callbacks and accumulated
 `GB_run` 8-MHz clocks. It records at most eight callback entries, plus KEY1,
 DIV, TIMA, PCM12 and BC witnesses. Timestamps identify the API call containing
@@ -778,10 +779,42 @@ direction-dependent boundary overhead, but these API observations do not by
 themselves prescribe hardware clock gating. No CPU/APU timing or save-state
 layout changes are made in this step. Per-case intervals, callback records,
 ROM/executable/library hashes and limits are recorded in
-`tests/fixtures/external-reference/cgb-stop-timing.json`. Next implement and
-validate a staged CGB-E speed transition with direct normalized clock witnesses,
-pause/resume save-state coverage and the existing PCM/timer/lifecycle controls,
-instead of treating STOP as an immediate speed-bit flip.
+`tests/fixtures/external-reference/cgb-stop-timing.json`.
+
+The CGB-E profile (including the `cgb` alias) now stages that transition. After
+the old-speed STOP fetch, 131,072 new-speed CPU clocks advance the timer and
+peripherals without fetching instructions. A normal-to-double boundary adds
+12 new-speed clocks with DIV held; the first resumed instruction adds four
+clocks with DIV held in either direction. The boundary model is constrained
+by both pulse periods, active/armed/off APU controls and the DIV/TIMA witnesses;
+it is an independently authored reference model, not hardware qualification.
+The first resumed instruction executes once and subsequent cadence is nominal.
+Other hardware revisions retain their existing transition behavior.
+
+Each settling step consumes four CPU clocks, allowing frames and captures to
+proceed and interrupt requests to accumulate until resumption. Save-state
+version 44 appends the countdown, resumption flag and normalized bus clock;
+checkpoints cover the long pause, short boundary and first resumed instruction.
+Invalid countdowns reject transactionally. Versions 1-43 remain loadable,
+without inventing a transition for their saved atomic STOP.
+
+All 48 STOP/APU cases now match PCM and DIV/TIMA/IF observations, compared
+with 24 full matches in the atomic baseline. All 48 frequency lifecycle cases
+also match, up from 16 retrigger-only matches; both matrices repeat and retain
+channel-pair agreement. All 84 SameSuite statuses are unchanged, and all 168
+conformance ROMs pass. The authored ROMs and independently built reference
+captures are summarized with hashes in
+`tests/fixtures/external-reference/cgb-stop-transition.json`.
+
+The timing probe's version-2 report uses a direct bus clock accumulated at the
+actual CPU speed. NOP controls and all 20 register effects still match.
+The switch windows are 131,100/262,164 8-MHz ticks through a resumed NOP,
+compared with reference API-call boundaries at 131,096/262,166. Those residual
++4/-2-tick differences remain explicit; callback boundaries are not hardware
+fetch timestamps. Next resolve that boundary anchoring and validate LCD-on
+PPU/bus behavior before extending the staged model to other revisions.
+LCD-off PCM fixtures do not validate the LCD-on VRAM/OAM locking behavior
+[described in Pan Docs](https://github.com/gbdev/pandocs/blob/master/src/CGB_Registers.md#ff4d--key1spd-cgb-mode-only-prepare-speed-switch).
 
 DIV/APU edges are dispatched at their timer-cycle boundary rather than being
 queued until the end of a bus batch. The APU also models the hardware rule that

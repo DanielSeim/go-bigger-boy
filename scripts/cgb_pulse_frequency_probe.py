@@ -118,7 +118,11 @@ def run_probe(runner, adapter, output, case=None, lifecycle=False):
     if case is not None:
         if case not in scenarios:
             raise ValueError('case does not belong to the selected frequency matrix')
+    # Repeated speed switches now consume their settling interval in GBB.
+    # Keep the shared defaults and isolated frequency matrix unchanged.
+    budgets = dict(max_cpu_cycles=100_000_000, max_reference_clocks=200_000_000) if lifecycle else {}
     return isolated.run_probe(runner, adapter, output,
+        **budgets,
         scenarios=(case,) if case is not None else scenarios, checkpoints=(2,),
         rom_builder=probe_rom, analyzer=analyze,
         comparison_key='event_sha256', comparison_name='pulse_frequency_write_boundary',

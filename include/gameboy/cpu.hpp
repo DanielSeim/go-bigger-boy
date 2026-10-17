@@ -41,6 +41,8 @@ public:
     [[nodiscard]] const CpuRegisters& registers() const noexcept;
     [[nodiscard]] bool halted() const noexcept;
     [[nodiscard]] bool stopped() const noexcept;
+    [[nodiscard]] unsigned debug_speed_switch_cycles_remaining() const noexcept { return speed_switch_cycles_; }
+    [[nodiscard]] bool debug_speed_switch_resume_pending() const noexcept { return speed_switch_resume_; }
     [[nodiscard]] bool interrupts_enabled() const noexcept;
     [[nodiscard]] std::uint64_t total_cycles() const noexcept;
     // Called only for an actual opcode fetch, never idle/interrupt steps.
@@ -101,6 +103,8 @@ private:
     bool ime_{};
     bool halted_{};
     bool stopped_{};
+    unsigned speed_switch_cycles_{};
+    bool speed_switch_resume_{};
     bool halt_bug_{};
     unsigned ime_enable_delay_{};
     unsigned step_cycles_{};

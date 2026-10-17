@@ -61,6 +61,8 @@ void Cpu::reset(const HardwareModel model) noexcept {
     ime_ = false;
     halted_ = false;
     stopped_ = false;
+    speed_switch_cycles_ = 0;
+    speed_switch_resume_ = false;
     halt_bug_ = false;
     ime_enable_delay_ = 0;
     step_cycles_ = 0;
@@ -73,6 +75,8 @@ void Cpu::reset_boot() noexcept {
     ime_ = false;
     halted_ = false;
     stopped_ = false;
+    speed_switch_cycles_ = 0;
+    speed_switch_resume_ = false;
     halt_bug_ = false;
     ime_enable_delay_ = 0;
     step_cycles_ = 0;
@@ -87,6 +91,22 @@ void Cpu::load_registers(CpuRegisters registers) noexcept {
 
 unsigned Cpu::step(MemoryBus& bus) {
     step_cycles_ = 0;
+    // A speed transition advances peripherals while fetching no instructions.
+    // Keep each step bounded so VBlanks, host capture and save/load remain
+    // observable throughout the measured CGB-E settling interval.
+    if (speed_switch_cycles_ != 0) {
+        // The normal-to-double boundary has three final-speed machine cycles
+        // with DIV held, isolated by active and armed pulse controls. The long
+        // interval itself advances the timer at the new CPU speed.
+        if (bus.double_speed() && speed_switch_cycles_ <= 12) idle_without_timer(bus, 4);
+        else idle(bus, 4);
+        speed_switch_cycles_ -= 4;
+        total_cycles_ += 4;
+        return 4;
+    }
+    const unsigned resume_cycles = speed_switch_resume_ ? 4 : 0;
+    speed_switch_resume_ = false;
+    if (resume_cycles) idle_without_timer(bus, resume_cycles);
     const auto pending = pending_interrupts(bus);
     const auto was_halted = halted_;
     if (halted_ || stopped_) {
@@ -112,13 +132,13 @@ unsigned Cpu::step(MemoryBus& bus) {
     }
 
     if (ime_ && pending != 0) {
-        const auto cycles = service_interrupt(bus, was_halted);
+        const auto cycles = service_interrupt(bus, was_halted) + resume_cycles;
         if (step_cycles_ < cycles) idle(bus, cycles - step_cycles_);
         total_cycles_ += cycles;
         return cycles;
     }
 
-    const auto cycles = execute_instruction(bus);
+    const auto cycles = execute_instruction(bus) + resume_cycles;
     if (step_cycles_ > cycles) {
         throw std::logic_error("CPU bus accesses exceeded instruction timing");
     }
@@ -301,6 +321,13 @@ unsigned Cpu::execute_instruction(MemoryBus& bus) {
         ++registers_.pc;
         bus.write8(0xFF04, 0);
         stopped_ = !bus.try_speed_switch();
+        if (!stopped_ && bus.staged_speed_switch()) {
+            // Public CGB-E reference windows and slow-TIMA witnesses agree on
+            // 131072 new-speed CPU clocks. Short transition-edge alignment is
+            // separately tracked by the STOP/PCM probes.
+            speed_switch_cycles_ = 131072 + (bus.double_speed() ? 12 : 0);
+            speed_switch_resume_ = true;
+        }
         return 4;
     case 0x12:
         write8(bus, de(), registers_.a);
@@ -597,6 +624,8 @@ unsigned Cpu::service_interrupt(MemoryBus& bus,
     ime_enable_delay_ = 0;
     halted_ = false;
     stopped_ = false;
+    speed_switch_cycles_ = 0;
+    speed_switch_resume_ = false;
     halt_bug_ = false;
     idle(bus, 8);
     --registers_.sp;

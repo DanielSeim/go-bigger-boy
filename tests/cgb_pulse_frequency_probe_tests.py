@@ -138,6 +138,15 @@ class ProbeContracts(unittest.TestCase):
                 run.assert_not_called()
             self.assertFalse(output.exists())
 
+    def test_long_switch_budget_is_scoped_to_lifecycle(self):
+        with patch.object(probe.isolated, 'run_probe') as run:
+            probe.run_probe(Path('/unused'), Path('/unused'), Path('/unused'), lifecycle=True)
+            self.assertEqual(run.call_args.kwargs['max_cpu_cycles'], 100_000_000)
+            self.assertEqual(run.call_args.kwargs['max_reference_clocks'], 200_000_000)
+            probe.run_probe(Path('/unused'), Path('/unused'), Path('/unused'))
+            self.assertNotIn('max_cpu_cycles', run.call_args.kwargs)
+            self.assertNotIn('max_reference_clocks', run.call_args.kwargs)
+
     def test_cli_disagreement_fails(self):
         capture = dict(repeatable=True, authored_constraints_match=True)
         report = dict(qualification=False, rows=[dict(match=False, captures=dict(gbb=capture, sameboy=capture))])
@@ -170,8 +179,7 @@ class NativeProbeContracts(unittest.TestCase):
                 a, b = (row['captures'][name]['events'] for name in ('gbb', 'sameboy'))
                 self.assertEqual(row['match'], a == b)
                 self.assertEqual(row['different_event_indices'], [i for i in range(64) if a[i] != b[i]])
-                if probe.lifecycle_mode(row['scenario']) == 'retrigger':
-                    self.assertTrue(row['match'])
+                self.assertTrue(row['match'])
                 for capture in row['captures'].values():
                     self.assertTrue(capture['repeatable'])
                     self.assertTrue(capture['authored_constraints_match'])

@@ -349,6 +349,7 @@ struct CpuFlowRecord {
     std::uint8_t opcode{};
     gameboy::CpuRegisters after{};
     std::uint16_t sp_before{};
+    std::uint64_t normalized_clocks{}; // Bus time at instruction exit.
 };
 
 void write_cpu_flow(const char* prefix, const CpuFlowRecord& record,
@@ -374,6 +375,7 @@ void write_cpu_flow(const char* prefix, const CpuFlowRecord& record,
          << " bc=" << std::setw(4) << ((unsigned(r.b) << 8) | r.c)
          << " de=" << std::setw(4) << ((unsigned(r.d) << 8) | r.e)
          << " hl=" << std::setw(4) << ((unsigned(r.h) << 8) | r.l);
+    line << std::dec << " normalized_8mhz=" << record.normalized_clocks;
     if (transition) line << " transition=" << transition;
     line << '\n';
     std::cerr << line.str();
@@ -455,11 +457,12 @@ struct CpuFlowDiagnostics {
         self.pc = pc;
         self.opcode = opcode;
     }
-    void first(const gameboy::Cpu& cpu, const char* transition, unsigned duration = 0) {
+    void first(const gameboy::Cpu& cpu, const gameboy::MemoryBus& bus, const char* transition, unsigned duration = 0) {
         if (!target || reached || cpu.registers().pc != *target) return;
         reached = true;
         auto record = previous.value_or(CpuFlowRecord{});
         record.cycle = cpu.total_cycles();
+        record.normalized_clocks = bus.debug_normalized_clocks();
         record.duration = duration;
         record.after = cpu.registers();
         write_cpu_flow("CPU_FIRST_PC", record, transition, previous.has_value());
@@ -475,7 +478,7 @@ struct CpuFlowDiagnostics {
     void stepped(const gameboy::Cpu& cpu, std::uint64_t cycle, unsigned duration,
                  std::uint16_t sp_before, const gameboy::MemoryBus& bus) {
         if (fetched) {
-            previous = CpuFlowRecord{cycle, duration, pc, opcode, cpu.registers(), sp_before};
+            previous = CpuFlowRecord{cycle, duration, pc, opcode, cpu.registers(), sp_before, bus.debug_normalized_clocks()};
             if (!records.empty()) {
                 records[next] = *previous;
                 next = (next + 1) % records.size();
@@ -490,7 +493,7 @@ struct CpuFlowDiagnostics {
                 history_count = std::min(history_count + 1, history.size());
             }
         }
-        first(cpu, fetched ? "instruction" : "interrupt", duration);
+        first(cpu, bus, fetched ? "instruction" : "interrupt", duration);
     }
     void dump() const {
         for (std::size_t i = 0; i < count; ++i)
@@ -1045,7 +1048,7 @@ int main(int argc, char** argv) {
         if(traces_flow || mapper_diagnostics)
             emulator.debug_set_cpu_instruction_observer(Observers::observe,&observers);
         if (traces_flow) {
-            cpu_flow.first(emulator.cpu(), "initial");
+            cpu_flow.first(emulator.cpu(), emulator.bus(), "initial");
         }
 
         if (sgb_recorder.has_value()) {

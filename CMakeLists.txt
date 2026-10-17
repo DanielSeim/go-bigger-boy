@@ -1352,6 +1352,12 @@ if(GAMEBOY_BUILD_TESTS)
     add_test(NAME gameboy_cgb_contract
              COMMAND gameboy_cgb_contract_tests)
 
+    add_executable(gameboy_cgb_speed_switch_contract_tests
+        tests/cgb_speed_switch_contract_tests.cpp)
+    target_link_libraries(gameboy_cgb_speed_switch_contract_tests PRIVATE gameboy_core)
+    add_test(NAME gameboy_cgb_speed_switch_contract
+             COMMAND gameboy_cgb_speed_switch_contract_tests)
+
     add_executable(gameboy_hardware_model_matrix_contract_tests
         tests/hardware_model_matrix_contract_tests.cpp)
     target_link_libraries(gameboy_hardware_model_matrix_contract_tests

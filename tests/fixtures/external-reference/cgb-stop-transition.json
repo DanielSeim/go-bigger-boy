@@ -1,0 +1,2929 @@
+{
+  "schema": "gbb-cgb-stop-transition-evidence-v1",
+  "qualification": false,
+  "date": "2026-10-16",
+  "base_commit": "d1c3ed1",
+  "model": "cgb-e",
+  "sameboy_commit": "208ba4afabffab9edde416f2dbb8ae459e34adb8",
+  "sameboy_library_sha256": "1ba66d2d813d99267b1be27cbc4642d624bbb8c7370e881546b1223bec3cf9fb",
+  "runner_sha256": "36d7b9a8e384a9163d5d5ae1959f9b160f3a57befd61b1a24a03854ad07d11f4",
+  "adapter_sha256": "91c3f965421013c9174bdca5d82b58da7a1723c228d15bee8559e9b22f269365",
+  "boot_sha256": "c8937124cd7dcafc036dcad3ad46008ea57b4e76abfa3da6012ff8bdbd7687d0",
+  "source_sha256": {
+    "src/cpu.cpp": "30d6a1b9b95d4c3a5709197099ed1b80f68ca99d62f791330af5827e70cb68e6",
+    "src/memory_bus.cpp": "813dbbb23f6f1ecc4c3f01132ad29e6408352ad9273a7c8def548a6587012171",
+    "src/save_state.cpp": "90e0c9002c9f01e18e770b2dec8079f8e307e567abaa3e6d420749faa827e4af",
+    "src/save_state_container.hpp": "1d67f5d79376a28ac80f44d138f423afd0f5f50f413204ee4ba7ed04ce03a256",
+    "include/gameboy/cpu.hpp": "24dbe8c17d5a21d012978687655899c68d639c3eab9875bcd9abd09e17b83314",
+    "include/gameboy/memory_bus.hpp": "92ae2cefeccd631199fed030fc3bce79e354ab593137721a3c64a5689be25240",
+    "apps/test_runner/main.cpp": "fdd76b931a871cf1cd9823d1b3473e8a19d6c9569bc9e00c09ddc8054d69beea",
+    "scripts/cgb_stop_timing_probe.py": "4a5d03bfd694967ae8d65947bc79c100c4f05c08a4914a3dfed3b54a2a02abb0",
+    "scripts/cgb_pulse_frequency_probe.py": "e1fac8b181ee4fe1a8a199a0c54871a1750511181522f0c5427ec3a7b05c209d",
+    "scripts/cgb_stop_apu_probe.py": "29d81666ef954ee62a1331eee9fa54443ec47a9cb62faa4def5842467b4c2392",
+    "scripts/sameboy_cgb_capture.c": "1e7d883b0f27472afce35d8280d84ee96485fd39860e7b57c40b985c5026ff36"
+  },
+  "save_state_version": 44,
+  "transition": {
+    "settling_new_speed_cpu_t_cycles": 131072,
+    "normal_to_double_div_held_boundary_t_cycles": 12,
+    "first_resume_div_held_t_cycles": 4,
+    "idle_step_cpu_t_cycles": 4
+  },
+  "emulator_executions": 584,
+  "timing": {
+    "schema": "gbb-cgb-stop-timing-probe-v2",
+    "cases": 20,
+    "architecture_matching": 20,
+    "timing_matching": 10,
+    "clock_source": "GBB bus clock accumulated at actual speed; reference GB_run call boundaries",
+    "rows": [
+      {
+        "scenario": "active-switch",
+        "initial_double_speed": false,
+        "rom_sha256": "a898243f0e3836c2b86fd93e10dd62140eca4c96919b91e4e60e3dd5805791b3",
+        "timing_match": false,
+        "architectural_match": true,
+        "gbb_cpu_t_cycles": 131096,
+        "gbb_normalized_8mhz_clocks": 131100,
+        "reference_8mhz_clocks": 131096,
+        "difference_8mhz_clocks": 4,
+        "reference_first_resume_gap": 8,
+        "reference_steady_gap": 4
+      },
+      {
+        "scenario": "active-nop",
+        "initial_double_speed": false,
+        "rom_sha256": "5561e3c69db2fd39f8463590ff9d3fd0fb83d0b451b88f4f2eb4b44dd3e4e081",
+        "timing_match": true,
+        "architectural_match": true,
+        "gbb_cpu_t_cycles": 8,
+        "gbb_normalized_8mhz_clocks": 16,
+        "reference_8mhz_clocks": 16,
+        "difference_8mhz_clocks": 0,
+        "reference_first_resume_gap": 8,
+        "reference_steady_gap": 8
+      },
+      {
+        "scenario": "armed-switch",
+        "initial_double_speed": false,
+        "rom_sha256": "3ca3ed185aa1f26184477e9f2433d453adc65448c803a80dd1d8a6fbfcb8236a",
+        "timing_match": false,
+        "architectural_match": true,
+        "gbb_cpu_t_cycles": 131096,
+        "gbb_normalized_8mhz_clocks": 131100,
+        "reference_8mhz_clocks": 131096,
+        "difference_8mhz_clocks": 4,
+        "reference_first_resume_gap": 8,
+        "reference_steady_gap": 4
+      },
+      {
+        "scenario": "armed-nop",
+        "initial_double_speed": false,
+        "rom_sha256": "98d719c0210082f6ee5c8656fee442150f4e3784e417f07c8fe7e163dee2f60c",
+        "timing_match": true,
+        "architectural_match": true,
+        "gbb_cpu_t_cycles": 8,
+        "gbb_normalized_8mhz_clocks": 16,
+        "reference_8mhz_clocks": 16,
+        "difference_8mhz_clocks": 0,
+        "reference_first_resume_gap": 8,
+        "reference_steady_gap": 8
+      },
+      {
+        "scenario": "off-switch",
+        "initial_double_speed": false,
+        "rom_sha256": "fd9aed5fe751d012ed91aeecb5e6d1adb2bd590fa1688d8a22f9d22bd48d49dc",
+        "timing_match": false,
+        "architectural_match": true,
+        "gbb_cpu_t_cycles": 131096,
+        "gbb_normalized_8mhz_clocks": 131100,
+        "reference_8mhz_clocks": 131096,
+        "difference_8mhz_clocks": 4,
+        "reference_first_resume_gap": 8,
+        "reference_steady_gap": 4
+      },
+      {
+        "scenario": "off-nop",
+        "initial_double_speed": false,
+        "rom_sha256": "8551b1863eff9a4232498b406085c3cc24a67ce2b7e3c5bcbf6292d6196eadeb",
+        "timing_match": true,
+        "architectural_match": true,
+        "gbb_cpu_t_cycles": 8,
+        "gbb_normalized_8mhz_clocks": 16,
+        "reference_8mhz_clocks": 16,
+        "difference_8mhz_clocks": 0,
+        "reference_first_resume_gap": 8,
+        "reference_steady_gap": 8
+      },
+      {
+        "scenario": "active-switch-inc",
+        "initial_double_speed": false,
+        "rom_sha256": "cdea1c8ac2731a27a755628bb2fa63e69b5ab4c8a6d43c0497e4f64ef0868a91",
+        "timing_match": false,
+        "architectural_match": true,
+        "gbb_cpu_t_cycles": 131096,
+        "gbb_normalized_8mhz_clocks": 131100,
+        "reference_8mhz_clocks": 131096,
+        "difference_8mhz_clocks": 4,
+        "reference_first_resume_gap": 8,
+        "reference_steady_gap": 4
+      },
+      {
+        "scenario": "active-nop-inc",
+        "initial_double_speed": false,
+        "rom_sha256": "f97ff5118f92a08f57264907f39354a3beb0dd369f437c10fde78752cd67e9ac",
+        "timing_match": true,
+        "architectural_match": true,
+        "gbb_cpu_t_cycles": 8,
+        "gbb_normalized_8mhz_clocks": 16,
+        "reference_8mhz_clocks": 16,
+        "difference_8mhz_clocks": 0,
+        "reference_first_resume_gap": 8,
+        "reference_steady_gap": 8
+      },
+      {
+        "scenario": "active-switch-load",
+        "initial_double_speed": false,
+        "rom_sha256": "d35aea78a3bff3b3d7c003f8c34939a2483332ce34bba844de3846d029d2fefa",
+        "timing_match": false,
+        "architectural_match": true,
+        "gbb_cpu_t_cycles": 131100,
+        "gbb_normalized_8mhz_clocks": 131104,
+        "reference_8mhz_clocks": 131100,
+        "difference_8mhz_clocks": 4,
+        "reference_first_resume_gap": 12,
+        "reference_steady_gap": 4
+      },
+      {
+        "scenario": "active-nop-load",
+        "initial_double_speed": false,
+        "rom_sha256": "0d3829d7fbe655643191ef6afd743d2f06a1e06cf9496de21f9ddbf0a19c3399",
+        "timing_match": true,
+        "architectural_match": true,
+        "gbb_cpu_t_cycles": 12,
+        "gbb_normalized_8mhz_clocks": 24,
+        "reference_8mhz_clocks": 24,
+        "difference_8mhz_clocks": 0,
+        "reference_first_resume_gap": 16,
+        "reference_steady_gap": 8
+      },
+      {
+        "scenario": "active-switch",
+        "initial_double_speed": true,
+        "rom_sha256": "9c1468699558b3cd8a1c1806150cdc0e97ac5e4568c0f14a06eb7ba343c60497",
+        "timing_match": false,
+        "architectural_match": true,
+        "gbb_cpu_t_cycles": 131084,
+        "gbb_normalized_8mhz_clocks": 262164,
+        "reference_8mhz_clocks": 262166,
+        "difference_8mhz_clocks": -2,
+        "reference_first_resume_gap": 16,
+        "reference_steady_gap": 8
+      },
+      {
+        "scenario": "active-nop",
+        "initial_double_speed": true,
+        "rom_sha256": "fb477a47afac0ad441dc9a9b192a7f871bfb5a2d26f61281c92550f3accb7dbc",
+        "timing_match": true,
+        "architectural_match": true,
+        "gbb_cpu_t_cycles": 8,
+        "gbb_normalized_8mhz_clocks": 8,
+        "reference_8mhz_clocks": 8,
+        "difference_8mhz_clocks": 0,
+        "reference_first_resume_gap": 4,
+        "reference_steady_gap": 4
+      },
+      {
+        "scenario": "armed-switch",
+        "initial_double_speed": true,
+        "rom_sha256": "c4431f5ae1f451dc23e66b84ff4f62b9a3b6e727d0962a449c231df413480df1",
+        "timing_match": false,
+        "architectural_match": true,
+        "gbb_cpu_t_cycles": 131084,
+        "gbb_normalized_8mhz_clocks": 262164,
+        "reference_8mhz_clocks": 262166,
+        "difference_8mhz_clocks": -2,
+        "reference_first_resume_gap": 16,
+        "reference_steady_gap": 8
+      },
+      {
+        "scenario": "armed-nop",
+        "initial_double_speed": true,
+        "rom_sha256": "38a3fac6a3a3fe7006dd93036e9031083269e6992f7a3fd18e3dec8ecb87268b",
+        "timing_match": true,
+        "architectural_match": true,
+        "gbb_cpu_t_cycles": 8,
+        "gbb_normalized_8mhz_clocks": 8,
+        "reference_8mhz_clocks": 8,
+        "difference_8mhz_clocks": 0,
+        "reference_first_resume_gap": 4,
+        "reference_steady_gap": 4
+      },
+      {
+        "scenario": "off-switch",
+        "initial_double_speed": true,
+        "rom_sha256": "96c7910af9b6e5cb1319e9bb52e4bea897f6dbf302c1a9978bdcdf8198bbd18b",
+        "timing_match": false,
+        "architectural_match": true,
+        "gbb_cpu_t_cycles": 131084,
+        "gbb_normalized_8mhz_clocks": 262164,
+        "reference_8mhz_clocks": 262166,
+        "difference_8mhz_clocks": -2,
+        "reference_first_resume_gap": 16,
+        "reference_steady_gap": 8
+      },
+      {
+        "scenario": "off-nop",
+        "initial_double_speed": true,
+        "rom_sha256": "eb7347dfcbf2e6e403b982a658342f937678ca608bf9b2c6a57b3026f9865437",
+        "timing_match": true,
+        "architectural_match": true,
+        "gbb_cpu_t_cycles": 8,
+        "gbb_normalized_8mhz_clocks": 8,
+        "reference_8mhz_clocks": 8,
+        "difference_8mhz_clocks": 0,
+        "reference_first_resume_gap": 4,
+        "reference_steady_gap": 4
+      },
+      {
+        "scenario": "active-switch-inc",
+        "initial_double_speed": true,
+        "rom_sha256": "9e784a17d8bb807381a22961d908dfa2cac2d35294a1bd61162178749f9f8197",
+        "timing_match": false,
+        "architectural_match": true,
+        "gbb_cpu_t_cycles": 131084,
+        "gbb_normalized_8mhz_clocks": 262164,
+        "reference_8mhz_clocks": 262166,
+        "difference_8mhz_clocks": -2,
+        "reference_first_resume_gap": 16,
+        "reference_steady_gap": 8
+      },
+      {
+        "scenario": "active-nop-inc",
+        "initial_double_speed": true,
+        "rom_sha256": "627f4e9edadbaaa5e3ede886c28e4ccadecd2fb8d5460fc52b71ba536616bd60",
+        "timing_match": true,
+        "architectural_match": true,
+        "gbb_cpu_t_cycles": 8,
+        "gbb_normalized_8mhz_clocks": 8,
+        "reference_8mhz_clocks": 8,
+        "difference_8mhz_clocks": 0,
+        "reference_first_resume_gap": 4,
+        "reference_steady_gap": 4
+      },
+      {
+        "scenario": "active-switch-load",
+        "initial_double_speed": true,
+        "rom_sha256": "fa144f2f3faba26a83c2c1edd993a7814d9a131b37e0949ecf5bcf48de5ed416",
+        "timing_match": false,
+        "architectural_match": true,
+        "gbb_cpu_t_cycles": 131088,
+        "gbb_normalized_8mhz_clocks": 262172,
+        "reference_8mhz_clocks": 262174,
+        "difference_8mhz_clocks": -2,
+        "reference_first_resume_gap": 24,
+        "reference_steady_gap": 8
+      },
+      {
+        "scenario": "active-nop-load",
+        "initial_double_speed": true,
+        "rom_sha256": "daf0b0c27f328850c0907d8f53a2312e0c381ca5ee4495e682dc8f3f3985593d",
+        "timing_match": true,
+        "architectural_match": true,
+        "gbb_cpu_t_cycles": 12,
+        "gbb_normalized_8mhz_clocks": 12,
+        "reference_8mhz_clocks": 12,
+        "difference_8mhz_clocks": 0,
+        "reference_first_resume_gap": 8,
+        "reference_steady_gap": 4
+      }
+    ]
+  },
+  "stop_apu": {
+    "cases": 48,
+    "pcm_matching": 48,
+    "timer_matching": 48,
+    "full_matching": 48,
+    "baseline_full_matching": 24,
+    "rows": [
+      {
+        "scenario": "ch1-active-switch-period-16",
+        "initial_double_speed": false,
+        "rom_sha256": "caaa0c70653b6ccde5e87edbb4079ddab0a4ffe14c59612518cc2b8a6afe738e",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "d164c2f974bdf3423800e1e82a34ac21959f09ceeb169826f42f01760ce79abf",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "3dc3e4ff53c614ed3b5b691c37425f5b788d1beefa51b7b7c1658d80a0d0769b",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "d164c2f974bdf3423800e1e82a34ac21959f09ceeb169826f42f01760ce79abf",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "3dc3e4ff53c614ed3b5b691c37425f5b788d1beefa51b7b7c1658d80a0d0769b",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch1-active-switch-period-28",
+        "initial_double_speed": false,
+        "rom_sha256": "bf1f4bc966294df78964c3ebe55eec0fa34a38e724307229c50c91c7c80b336d",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "2507caca3340d646d5d6f520a87f1967f6d2808659798663f7df82dd1a28cef8",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "f2ba477570b90928d479e09f030351ee847b0b4915c4d46b2d40e0e30649c0f8",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "2507caca3340d646d5d6f520a87f1967f6d2808659798663f7df82dd1a28cef8",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "f2ba477570b90928d479e09f030351ee847b0b4915c4d46b2d40e0e30649c0f8",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch1-active-nop-period-16",
+        "initial_double_speed": false,
+        "rom_sha256": "eb28fb860020e0c9ca0b601e667da6647f5775e2b3b949d1641752a23fdaae25",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "66069701f6dd6d6290643c967ffccbaca0645161a25538b14a0c9cb0ad07b4c3",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "312086c1d78cc5bcf5a80fbb789b2014f84aeb7b1f73e6b5111b4ef65193db2e",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "66069701f6dd6d6290643c967ffccbaca0645161a25538b14a0c9cb0ad07b4c3",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "312086c1d78cc5bcf5a80fbb789b2014f84aeb7b1f73e6b5111b4ef65193db2e",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch1-active-nop-period-28",
+        "initial_double_speed": false,
+        "rom_sha256": "768b613000732ff5dd12e4acfde2eb74faa886a14b0824d26194c44fdd055e8c",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "64c8cc98a6668426e34e2555c4404140b7b555db3409ae9f872b769bef3effc7",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "eceddc849cc6e8e4353ca2dea09ecd10909698af7bea30429377bf07a3a6dd55",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "64c8cc98a6668426e34e2555c4404140b7b555db3409ae9f872b769bef3effc7",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "eceddc849cc6e8e4353ca2dea09ecd10909698af7bea30429377bf07a3a6dd55",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch1-armed-switch-period-16",
+        "initial_double_speed": false,
+        "rom_sha256": "95f3f148f2ec78f02fcee135f178675c907688df3e8a0994ae6b59912d178ff1",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "747b9d2a5c6fef4e952455ae0c706c3a0390fbf07afb74eeb86ebf2f7e2d620d",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "0794779654336ee9f8783ad2a3d86e8c086ce1d33d808c32f34b88f5957d289a",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "747b9d2a5c6fef4e952455ae0c706c3a0390fbf07afb74eeb86ebf2f7e2d620d",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "0794779654336ee9f8783ad2a3d86e8c086ce1d33d808c32f34b88f5957d289a",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch1-armed-switch-period-28",
+        "initial_double_speed": false,
+        "rom_sha256": "5d4130a8f9576591b1cace103e16602aa569caf766577b5847f05ffbac794cb3",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "97bdee8b9e31de31a21e3433378fb1300da21c73447e3287adfa5ae03bdf71cb",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "df8bc111cab4328bc3ef8572c55c24cdab5e8c795ef129810b0cb634085a0067",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "97bdee8b9e31de31a21e3433378fb1300da21c73447e3287adfa5ae03bdf71cb",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "df8bc111cab4328bc3ef8572c55c24cdab5e8c795ef129810b0cb634085a0067",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch1-armed-nop-period-16",
+        "initial_double_speed": false,
+        "rom_sha256": "2f87507480e01893d216aef5120c0d4ce80251ee45cee0d4d83d93acea0f822e",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "2ee01768b4f78ee48ecf337289e28cb62525dea81f7ccec07515215fc49fb797",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "2654a5c4749eb39191cd68af25eaf53bf2dfeba61b63d6004cd7a6190a57d2cc",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "2ee01768b4f78ee48ecf337289e28cb62525dea81f7ccec07515215fc49fb797",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "2654a5c4749eb39191cd68af25eaf53bf2dfeba61b63d6004cd7a6190a57d2cc",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch1-armed-nop-period-28",
+        "initial_double_speed": false,
+        "rom_sha256": "822cad28a087ce86d4bbad718e247ef8e23b2e1dc992c4f6558119a524a2482f",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "bc045131e7fbe2d819b7cf453db8aa412238fe27d15ebb1a5001e8db93ac42dd",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "7c5088789729e01fb5289fbf5c112eb84379a6090632a3dcd23650cf009a2ca6",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "bc045131e7fbe2d819b7cf453db8aa412238fe27d15ebb1a5001e8db93ac42dd",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "7c5088789729e01fb5289fbf5c112eb84379a6090632a3dcd23650cf009a2ca6",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch1-off-switch-period-16",
+        "initial_double_speed": false,
+        "rom_sha256": "8b8560f7c1b20043362b75f8a62edf3fa2f7259ae4de8d3ff42310d9e374acad",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "99acf1dd514fde68bf63c8807f5edb75640da2f612f149ecb6eb9a4aa298e584",
+            "timer_sha256": "c04adbe40afc21914ff0a150d49531f33cbbb9d285aac62d4799bf73b96f11ea",
+            "event_sha256": "d0b71a10057afd06021594757728547ee250265f35c5447dcee0ff6dbae89347",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "99acf1dd514fde68bf63c8807f5edb75640da2f612f149ecb6eb9a4aa298e584",
+            "timer_sha256": "c04adbe40afc21914ff0a150d49531f33cbbb9d285aac62d4799bf73b96f11ea",
+            "event_sha256": "d0b71a10057afd06021594757728547ee250265f35c5447dcee0ff6dbae89347",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch1-off-switch-period-28",
+        "initial_double_speed": false,
+        "rom_sha256": "f600c915ca3b7e14ff31d3e2b8e8afcdfa8bfaccbaba4f7fb374cb3cc83398c0",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "f9033c09cbf78527473bbad99c406a96acd8a2d5abf5fb03e589ff044789d12e",
+            "timer_sha256": "c04adbe40afc21914ff0a150d49531f33cbbb9d285aac62d4799bf73b96f11ea",
+            "event_sha256": "6b6c09093f56c27424db104195a0f1368ac3ba34cfbfce264ba68b71b00768cc",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "f9033c09cbf78527473bbad99c406a96acd8a2d5abf5fb03e589ff044789d12e",
+            "timer_sha256": "c04adbe40afc21914ff0a150d49531f33cbbb9d285aac62d4799bf73b96f11ea",
+            "event_sha256": "6b6c09093f56c27424db104195a0f1368ac3ba34cfbfce264ba68b71b00768cc",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch1-off-nop-period-16",
+        "initial_double_speed": false,
+        "rom_sha256": "0ed45f871183cce0cd816367bef8022bc91ce9bfb5005d2aa55407cab63f573b",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "2ee01768b4f78ee48ecf337289e28cb62525dea81f7ccec07515215fc49fb797",
+            "timer_sha256": "ff971b0c9417a5b8a53aab3161683641c43bf6cf8a083ed8aa920759877faa6b",
+            "event_sha256": "ddfd369085153669fd04c43fb7fa419aa4616d1968c0b90af08e9055afc4e975",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "2ee01768b4f78ee48ecf337289e28cb62525dea81f7ccec07515215fc49fb797",
+            "timer_sha256": "ff971b0c9417a5b8a53aab3161683641c43bf6cf8a083ed8aa920759877faa6b",
+            "event_sha256": "ddfd369085153669fd04c43fb7fa419aa4616d1968c0b90af08e9055afc4e975",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch1-off-nop-period-28",
+        "initial_double_speed": false,
+        "rom_sha256": "36bb83bfb15a7a150cfeefe08528b96c0e898fb51956b8aeca6335e388b135fc",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "bc045131e7fbe2d819b7cf453db8aa412238fe27d15ebb1a5001e8db93ac42dd",
+            "timer_sha256": "ff971b0c9417a5b8a53aab3161683641c43bf6cf8a083ed8aa920759877faa6b",
+            "event_sha256": "0885cea8c45f9285d6f52bd4818c41e4cfe22e9b302d6de50e3a4e043cb2b359",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "bc045131e7fbe2d819b7cf453db8aa412238fe27d15ebb1a5001e8db93ac42dd",
+            "timer_sha256": "ff971b0c9417a5b8a53aab3161683641c43bf6cf8a083ed8aa920759877faa6b",
+            "event_sha256": "0885cea8c45f9285d6f52bd4818c41e4cfe22e9b302d6de50e3a4e043cb2b359",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-active-switch-period-16",
+        "initial_double_speed": false,
+        "rom_sha256": "9be82893c8710277ceb58bfdba7bc2daa825700ef1395023d0758831a4c4d9ba",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "d164c2f974bdf3423800e1e82a34ac21959f09ceeb169826f42f01760ce79abf",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "3dc3e4ff53c614ed3b5b691c37425f5b788d1beefa51b7b7c1658d80a0d0769b",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "d164c2f974bdf3423800e1e82a34ac21959f09ceeb169826f42f01760ce79abf",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "3dc3e4ff53c614ed3b5b691c37425f5b788d1beefa51b7b7c1658d80a0d0769b",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-active-switch-period-28",
+        "initial_double_speed": false,
+        "rom_sha256": "a6d18fb441c8321093d14a59e3f697158dff930e7dcbbc0f11fd60755098c973",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "2507caca3340d646d5d6f520a87f1967f6d2808659798663f7df82dd1a28cef8",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "f2ba477570b90928d479e09f030351ee847b0b4915c4d46b2d40e0e30649c0f8",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "2507caca3340d646d5d6f520a87f1967f6d2808659798663f7df82dd1a28cef8",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "f2ba477570b90928d479e09f030351ee847b0b4915c4d46b2d40e0e30649c0f8",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-active-nop-period-16",
+        "initial_double_speed": false,
+        "rom_sha256": "48877289bbfc8079612b99ecc6606bca63fe361714a15c6b8e783e3d4827cb2e",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "66069701f6dd6d6290643c967ffccbaca0645161a25538b14a0c9cb0ad07b4c3",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "312086c1d78cc5bcf5a80fbb789b2014f84aeb7b1f73e6b5111b4ef65193db2e",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "66069701f6dd6d6290643c967ffccbaca0645161a25538b14a0c9cb0ad07b4c3",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "312086c1d78cc5bcf5a80fbb789b2014f84aeb7b1f73e6b5111b4ef65193db2e",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-active-nop-period-28",
+        "initial_double_speed": false,
+        "rom_sha256": "d7497695615edb6a27eba2d8283454a337e876c4e1c838f49c407e8d633232be",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "64c8cc98a6668426e34e2555c4404140b7b555db3409ae9f872b769bef3effc7",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "eceddc849cc6e8e4353ca2dea09ecd10909698af7bea30429377bf07a3a6dd55",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "64c8cc98a6668426e34e2555c4404140b7b555db3409ae9f872b769bef3effc7",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "eceddc849cc6e8e4353ca2dea09ecd10909698af7bea30429377bf07a3a6dd55",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-armed-switch-period-16",
+        "initial_double_speed": false,
+        "rom_sha256": "0f262ddb07b3855e63d145a99a8b5318e3bfe10394e21a91f4707c000cc50d7f",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "747b9d2a5c6fef4e952455ae0c706c3a0390fbf07afb74eeb86ebf2f7e2d620d",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "0794779654336ee9f8783ad2a3d86e8c086ce1d33d808c32f34b88f5957d289a",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "747b9d2a5c6fef4e952455ae0c706c3a0390fbf07afb74eeb86ebf2f7e2d620d",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "0794779654336ee9f8783ad2a3d86e8c086ce1d33d808c32f34b88f5957d289a",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-armed-switch-period-28",
+        "initial_double_speed": false,
+        "rom_sha256": "9c2c8cf5409af1c91b5d2e3cc4d88e2822712c6aa46c37d351e12fb7884fa9e3",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "97bdee8b9e31de31a21e3433378fb1300da21c73447e3287adfa5ae03bdf71cb",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "df8bc111cab4328bc3ef8572c55c24cdab5e8c795ef129810b0cb634085a0067",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "97bdee8b9e31de31a21e3433378fb1300da21c73447e3287adfa5ae03bdf71cb",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "df8bc111cab4328bc3ef8572c55c24cdab5e8c795ef129810b0cb634085a0067",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-armed-nop-period-16",
+        "initial_double_speed": false,
+        "rom_sha256": "46b449ef70074989781111351f0e812ae7df2a47a88950115fc31e2ff7df18a7",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "2ee01768b4f78ee48ecf337289e28cb62525dea81f7ccec07515215fc49fb797",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "2654a5c4749eb39191cd68af25eaf53bf2dfeba61b63d6004cd7a6190a57d2cc",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "2ee01768b4f78ee48ecf337289e28cb62525dea81f7ccec07515215fc49fb797",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "2654a5c4749eb39191cd68af25eaf53bf2dfeba61b63d6004cd7a6190a57d2cc",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-armed-nop-period-28",
+        "initial_double_speed": false,
+        "rom_sha256": "fb3d78f8de043e48468a83ff574c9e0f499afc5014db02c7ac935f97d9c8e21c",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "bc045131e7fbe2d819b7cf453db8aa412238fe27d15ebb1a5001e8db93ac42dd",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "7c5088789729e01fb5289fbf5c112eb84379a6090632a3dcd23650cf009a2ca6",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "bc045131e7fbe2d819b7cf453db8aa412238fe27d15ebb1a5001e8db93ac42dd",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "7c5088789729e01fb5289fbf5c112eb84379a6090632a3dcd23650cf009a2ca6",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-off-switch-period-16",
+        "initial_double_speed": false,
+        "rom_sha256": "21c5f8612b1c39f04df1e1156a8f7ef8ce773307c807aecd36c2ead133e05a4d",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "99acf1dd514fde68bf63c8807f5edb75640da2f612f149ecb6eb9a4aa298e584",
+            "timer_sha256": "c04adbe40afc21914ff0a150d49531f33cbbb9d285aac62d4799bf73b96f11ea",
+            "event_sha256": "d0b71a10057afd06021594757728547ee250265f35c5447dcee0ff6dbae89347",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "99acf1dd514fde68bf63c8807f5edb75640da2f612f149ecb6eb9a4aa298e584",
+            "timer_sha256": "c04adbe40afc21914ff0a150d49531f33cbbb9d285aac62d4799bf73b96f11ea",
+            "event_sha256": "d0b71a10057afd06021594757728547ee250265f35c5447dcee0ff6dbae89347",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-off-switch-period-28",
+        "initial_double_speed": false,
+        "rom_sha256": "dd2e1fbc1f7990baaa64e16a72cca290cbcd8079ab76538e5fc585049d46038b",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "f9033c09cbf78527473bbad99c406a96acd8a2d5abf5fb03e589ff044789d12e",
+            "timer_sha256": "c04adbe40afc21914ff0a150d49531f33cbbb9d285aac62d4799bf73b96f11ea",
+            "event_sha256": "6b6c09093f56c27424db104195a0f1368ac3ba34cfbfce264ba68b71b00768cc",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "f9033c09cbf78527473bbad99c406a96acd8a2d5abf5fb03e589ff044789d12e",
+            "timer_sha256": "c04adbe40afc21914ff0a150d49531f33cbbb9d285aac62d4799bf73b96f11ea",
+            "event_sha256": "6b6c09093f56c27424db104195a0f1368ac3ba34cfbfce264ba68b71b00768cc",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-off-nop-period-16",
+        "initial_double_speed": false,
+        "rom_sha256": "9b6ab0cd8b9e50ee2c0cc62a347d9a1d42e71d46b1bd2376173ad18ec96e7362",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "2ee01768b4f78ee48ecf337289e28cb62525dea81f7ccec07515215fc49fb797",
+            "timer_sha256": "ff971b0c9417a5b8a53aab3161683641c43bf6cf8a083ed8aa920759877faa6b",
+            "event_sha256": "ddfd369085153669fd04c43fb7fa419aa4616d1968c0b90af08e9055afc4e975",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "2ee01768b4f78ee48ecf337289e28cb62525dea81f7ccec07515215fc49fb797",
+            "timer_sha256": "ff971b0c9417a5b8a53aab3161683641c43bf6cf8a083ed8aa920759877faa6b",
+            "event_sha256": "ddfd369085153669fd04c43fb7fa419aa4616d1968c0b90af08e9055afc4e975",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-off-nop-period-28",
+        "initial_double_speed": false,
+        "rom_sha256": "4a2d203cd05a24389cacb5386a6e872dfd0991694cae89e73115571e79157b88",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "bc045131e7fbe2d819b7cf453db8aa412238fe27d15ebb1a5001e8db93ac42dd",
+            "timer_sha256": "ff971b0c9417a5b8a53aab3161683641c43bf6cf8a083ed8aa920759877faa6b",
+            "event_sha256": "0885cea8c45f9285d6f52bd4818c41e4cfe22e9b302d6de50e3a4e043cb2b359",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "bc045131e7fbe2d819b7cf453db8aa412238fe27d15ebb1a5001e8db93ac42dd",
+            "timer_sha256": "ff971b0c9417a5b8a53aab3161683641c43bf6cf8a083ed8aa920759877faa6b",
+            "event_sha256": "0885cea8c45f9285d6f52bd4818c41e4cfe22e9b302d6de50e3a4e043cb2b359",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch1-active-switch-period-16",
+        "initial_double_speed": true,
+        "rom_sha256": "b44e0548ae2acd8ff187a58bd408eabf0e33ebaaf3bfc9a5af82c965774f9626",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "23398c3ed93e1ad04fd3c9614ef5f9920665ff7958c95ef51032c416e2b7948a",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "a8f1faff71147a935d0baea11f43eef9a6802ad49d2dd7ffaffd52e0dd2b8549",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "23398c3ed93e1ad04fd3c9614ef5f9920665ff7958c95ef51032c416e2b7948a",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "a8f1faff71147a935d0baea11f43eef9a6802ad49d2dd7ffaffd52e0dd2b8549",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch1-active-switch-period-28",
+        "initial_double_speed": true,
+        "rom_sha256": "1fcf419fe58fc1acd24d2d918f2ad4c19ee144005b2d8cb1bed990bdc5562359",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "e8b15173784ad97e8daeadec8b91059daea9af907d3175d643d233f0a577f5a2",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "0cebf6b1fe21dd34f5da30cda6d031115a576eee681f6fc250b97a67c084120d",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "e8b15173784ad97e8daeadec8b91059daea9af907d3175d643d233f0a577f5a2",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "0cebf6b1fe21dd34f5da30cda6d031115a576eee681f6fc250b97a67c084120d",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch1-active-nop-period-16",
+        "initial_double_speed": true,
+        "rom_sha256": "21fa450583adc154f91d43b0319e3658819605c5d5bc878e3320906178dfc06e",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "ea453a778041d5f69fb1e5e4ef753dbfc11449f71bba0a419ee9ef6bf22a181e",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "85fd29c1cacc1dc2dba7608c0b9d56d7149194211e924973674e34ea57a565d3",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "ea453a778041d5f69fb1e5e4ef753dbfc11449f71bba0a419ee9ef6bf22a181e",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "85fd29c1cacc1dc2dba7608c0b9d56d7149194211e924973674e34ea57a565d3",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch1-active-nop-period-28",
+        "initial_double_speed": true,
+        "rom_sha256": "9e5c215f6d1d6d762ae964f968cd0ad6d162db66eed94ee5dd8e4d6f3dcf7a64",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "c259b49c7bf95bacff4da33e0686218b2dc0933aa21d87c58767ca0210f7bc51",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "3157330d9aa393924683198d1db448c158d9c5916906bb862d302e80221c99e6",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "c259b49c7bf95bacff4da33e0686218b2dc0933aa21d87c58767ca0210f7bc51",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "3157330d9aa393924683198d1db448c158d9c5916906bb862d302e80221c99e6",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch1-armed-switch-period-16",
+        "initial_double_speed": true,
+        "rom_sha256": "6d7e9e70af273f876e66f8a64858c85d693bda25e164a27925fc246cc933029e",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "2ee01768b4f78ee48ecf337289e28cb62525dea81f7ccec07515215fc49fb797",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "c239c125b7b2dc6a3be429aeef252c1543c6be8304c7d06bc15e53e235b352b1",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "2ee01768b4f78ee48ecf337289e28cb62525dea81f7ccec07515215fc49fb797",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "c239c125b7b2dc6a3be429aeef252c1543c6be8304c7d06bc15e53e235b352b1",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch1-armed-switch-period-28",
+        "initial_double_speed": true,
+        "rom_sha256": "65d7217acab0326234ea964a0704892144dce543f0c74f15efb36f6ceafc62eb",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "bc045131e7fbe2d819b7cf453db8aa412238fe27d15ebb1a5001e8db93ac42dd",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "ff3ee804201a742b4c75ca2d9ba648ff32e87c8b8efb3225de221f8a2838d7cf",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "bc045131e7fbe2d819b7cf453db8aa412238fe27d15ebb1a5001e8db93ac42dd",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "ff3ee804201a742b4c75ca2d9ba648ff32e87c8b8efb3225de221f8a2838d7cf",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch1-armed-nop-period-16",
+        "initial_double_speed": true,
+        "rom_sha256": "bbe1580bbb39656c7fc108abafbca7fc386a708e09b83b8f39ade6f480d4f216",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "747b9d2a5c6fef4e952455ae0c706c3a0390fbf07afb74eeb86ebf2f7e2d620d",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "c21eb234e377a86bc25cb1f1e49fabbcedbe3c498871cab9554da020d65fcac8",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "747b9d2a5c6fef4e952455ae0c706c3a0390fbf07afb74eeb86ebf2f7e2d620d",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "c21eb234e377a86bc25cb1f1e49fabbcedbe3c498871cab9554da020d65fcac8",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch1-armed-nop-period-28",
+        "initial_double_speed": true,
+        "rom_sha256": "692544d482d952b7e4fc41f6d26c94bb26270263b8fc98c78affade07f557437",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "97bdee8b9e31de31a21e3433378fb1300da21c73447e3287adfa5ae03bdf71cb",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "d3b42ccf51880c9b0ff9c769612b570695159abc349a502d2ea372c9f8baf261",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "97bdee8b9e31de31a21e3433378fb1300da21c73447e3287adfa5ae03bdf71cb",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "d3b42ccf51880c9b0ff9c769612b570695159abc349a502d2ea372c9f8baf261",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch1-off-switch-period-16",
+        "initial_double_speed": true,
+        "rom_sha256": "8e9993df8b980f0c6cc7d3ab0efc8c4ed6a87727c42a47e758ea1aab9818aa57",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "2ee01768b4f78ee48ecf337289e28cb62525dea81f7ccec07515215fc49fb797",
+            "timer_sha256": "c04adbe40afc21914ff0a150d49531f33cbbb9d285aac62d4799bf73b96f11ea",
+            "event_sha256": "fd79b87bdb650b48de80c20a8e3c54450285017c953029b0605d84e1c926b062",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "2ee01768b4f78ee48ecf337289e28cb62525dea81f7ccec07515215fc49fb797",
+            "timer_sha256": "c04adbe40afc21914ff0a150d49531f33cbbb9d285aac62d4799bf73b96f11ea",
+            "event_sha256": "fd79b87bdb650b48de80c20a8e3c54450285017c953029b0605d84e1c926b062",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch1-off-switch-period-28",
+        "initial_double_speed": true,
+        "rom_sha256": "bfca8adb7da2124bd7db3d12630f5a2d50580923a8355abea7b9d7e65f088335",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "bc045131e7fbe2d819b7cf453db8aa412238fe27d15ebb1a5001e8db93ac42dd",
+            "timer_sha256": "c04adbe40afc21914ff0a150d49531f33cbbb9d285aac62d4799bf73b96f11ea",
+            "event_sha256": "80f653d98e3c4b9abdd3001b607d2e8e4ad2e9444ff8c51f0cc4fbc70b2a1e6f",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "bc045131e7fbe2d819b7cf453db8aa412238fe27d15ebb1a5001e8db93ac42dd",
+            "timer_sha256": "c04adbe40afc21914ff0a150d49531f33cbbb9d285aac62d4799bf73b96f11ea",
+            "event_sha256": "80f653d98e3c4b9abdd3001b607d2e8e4ad2e9444ff8c51f0cc4fbc70b2a1e6f",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch1-off-nop-period-16",
+        "initial_double_speed": true,
+        "rom_sha256": "a06129fb83a1b584ab2fc7f1cebf86bf7293fdcb1cbcfff1040343767838c177",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "99acf1dd514fde68bf63c8807f5edb75640da2f612f149ecb6eb9a4aa298e584",
+            "timer_sha256": "ff971b0c9417a5b8a53aab3161683641c43bf6cf8a083ed8aa920759877faa6b",
+            "event_sha256": "befbf998d2d7e93ae1bf7cccb78015c29694209fc77a0b2a774e9e3b8a3554f4",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "99acf1dd514fde68bf63c8807f5edb75640da2f612f149ecb6eb9a4aa298e584",
+            "timer_sha256": "ff971b0c9417a5b8a53aab3161683641c43bf6cf8a083ed8aa920759877faa6b",
+            "event_sha256": "befbf998d2d7e93ae1bf7cccb78015c29694209fc77a0b2a774e9e3b8a3554f4",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch1-off-nop-period-28",
+        "initial_double_speed": true,
+        "rom_sha256": "3ad25060e68d0438923187b1df3ee75f8ef144806abdddcc9321990bffb90f63",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "f9033c09cbf78527473bbad99c406a96acd8a2d5abf5fb03e589ff044789d12e",
+            "timer_sha256": "ff971b0c9417a5b8a53aab3161683641c43bf6cf8a083ed8aa920759877faa6b",
+            "event_sha256": "78aedd79143f1002d4df8196829f0926e40d5469bba48aa9ce561d4632b1bd76",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "f9033c09cbf78527473bbad99c406a96acd8a2d5abf5fb03e589ff044789d12e",
+            "timer_sha256": "ff971b0c9417a5b8a53aab3161683641c43bf6cf8a083ed8aa920759877faa6b",
+            "event_sha256": "78aedd79143f1002d4df8196829f0926e40d5469bba48aa9ce561d4632b1bd76",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-active-switch-period-16",
+        "initial_double_speed": true,
+        "rom_sha256": "69579795a8e9ecc2803769088e5655c2e32bbef2eacb3d6074d6fa1749a07a5c",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "23398c3ed93e1ad04fd3c9614ef5f9920665ff7958c95ef51032c416e2b7948a",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "a8f1faff71147a935d0baea11f43eef9a6802ad49d2dd7ffaffd52e0dd2b8549",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "23398c3ed93e1ad04fd3c9614ef5f9920665ff7958c95ef51032c416e2b7948a",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "a8f1faff71147a935d0baea11f43eef9a6802ad49d2dd7ffaffd52e0dd2b8549",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-active-switch-period-28",
+        "initial_double_speed": true,
+        "rom_sha256": "96773aeb1c2d450b7f728be4ade0dfca3bc4aa2a3ad3f5ad794205452ffe0f6b",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "e8b15173784ad97e8daeadec8b91059daea9af907d3175d643d233f0a577f5a2",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "0cebf6b1fe21dd34f5da30cda6d031115a576eee681f6fc250b97a67c084120d",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "e8b15173784ad97e8daeadec8b91059daea9af907d3175d643d233f0a577f5a2",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "0cebf6b1fe21dd34f5da30cda6d031115a576eee681f6fc250b97a67c084120d",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-active-nop-period-16",
+        "initial_double_speed": true,
+        "rom_sha256": "49e90b7f7759b073822ae7280d7c0a781e11eccc9e71e2b9584781469bcfdb7f",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "ea453a778041d5f69fb1e5e4ef753dbfc11449f71bba0a419ee9ef6bf22a181e",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "85fd29c1cacc1dc2dba7608c0b9d56d7149194211e924973674e34ea57a565d3",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "ea453a778041d5f69fb1e5e4ef753dbfc11449f71bba0a419ee9ef6bf22a181e",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "85fd29c1cacc1dc2dba7608c0b9d56d7149194211e924973674e34ea57a565d3",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-active-nop-period-28",
+        "initial_double_speed": true,
+        "rom_sha256": "ccb349564ad418447dbd9c744b7c44099f79998409a2db512fff298688d7581e",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "c259b49c7bf95bacff4da33e0686218b2dc0933aa21d87c58767ca0210f7bc51",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "3157330d9aa393924683198d1db448c158d9c5916906bb862d302e80221c99e6",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "c259b49c7bf95bacff4da33e0686218b2dc0933aa21d87c58767ca0210f7bc51",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "3157330d9aa393924683198d1db448c158d9c5916906bb862d302e80221c99e6",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-armed-switch-period-16",
+        "initial_double_speed": true,
+        "rom_sha256": "be781c91933b7e08bc54db6fe4191372d52af271c522e5f63dda4baa2a175172",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "2ee01768b4f78ee48ecf337289e28cb62525dea81f7ccec07515215fc49fb797",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "c239c125b7b2dc6a3be429aeef252c1543c6be8304c7d06bc15e53e235b352b1",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "2ee01768b4f78ee48ecf337289e28cb62525dea81f7ccec07515215fc49fb797",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "c239c125b7b2dc6a3be429aeef252c1543c6be8304c7d06bc15e53e235b352b1",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-armed-switch-period-28",
+        "initial_double_speed": true,
+        "rom_sha256": "6eba5f160694dbbaf086e279c135f117a0bbc53bf04bb4b46fb9ee955e6e19fc",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "bc045131e7fbe2d819b7cf453db8aa412238fe27d15ebb1a5001e8db93ac42dd",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "ff3ee804201a742b4c75ca2d9ba648ff32e87c8b8efb3225de221f8a2838d7cf",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "bc045131e7fbe2d819b7cf453db8aa412238fe27d15ebb1a5001e8db93ac42dd",
+            "timer_sha256": "81dbab105f2d537ca0ef81ec1352828f98de30afc69ba8c29b633ab49ae9420a",
+            "event_sha256": "ff3ee804201a742b4c75ca2d9ba648ff32e87c8b8efb3225de221f8a2838d7cf",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-armed-nop-period-16",
+        "initial_double_speed": true,
+        "rom_sha256": "357f6c0337820dc204c5cb492f98c6f593d5d7b8e51797e5f87f9f74c7bcd09b",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "747b9d2a5c6fef4e952455ae0c706c3a0390fbf07afb74eeb86ebf2f7e2d620d",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "c21eb234e377a86bc25cb1f1e49fabbcedbe3c498871cab9554da020d65fcac8",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "747b9d2a5c6fef4e952455ae0c706c3a0390fbf07afb74eeb86ebf2f7e2d620d",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "c21eb234e377a86bc25cb1f1e49fabbcedbe3c498871cab9554da020d65fcac8",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-armed-nop-period-28",
+        "initial_double_speed": true,
+        "rom_sha256": "8d38404f7f34ed85ea14d3308fe9ec9c78e7c06f0adb562eb73e2d4a2912f30d",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "97bdee8b9e31de31a21e3433378fb1300da21c73447e3287adfa5ae03bdf71cb",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "d3b42ccf51880c9b0ff9c769612b570695159abc349a502d2ea372c9f8baf261",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "97bdee8b9e31de31a21e3433378fb1300da21c73447e3287adfa5ae03bdf71cb",
+            "timer_sha256": "930b95129c22c33e09f326ef40007cabfd0b86e0ae3b5b641fe75dcad8e5880a",
+            "event_sha256": "d3b42ccf51880c9b0ff9c769612b570695159abc349a502d2ea372c9f8baf261",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-off-switch-period-16",
+        "initial_double_speed": true,
+        "rom_sha256": "a5ccc41bffd7fcd2f8f9b549b714cdecd2e1b5e58444f5dc77009f4213a19c7e",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "2ee01768b4f78ee48ecf337289e28cb62525dea81f7ccec07515215fc49fb797",
+            "timer_sha256": "c04adbe40afc21914ff0a150d49531f33cbbb9d285aac62d4799bf73b96f11ea",
+            "event_sha256": "fd79b87bdb650b48de80c20a8e3c54450285017c953029b0605d84e1c926b062",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "2ee01768b4f78ee48ecf337289e28cb62525dea81f7ccec07515215fc49fb797",
+            "timer_sha256": "c04adbe40afc21914ff0a150d49531f33cbbb9d285aac62d4799bf73b96f11ea",
+            "event_sha256": "fd79b87bdb650b48de80c20a8e3c54450285017c953029b0605d84e1c926b062",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-off-switch-period-28",
+        "initial_double_speed": true,
+        "rom_sha256": "b94a5b2c52bc61fd491ff4f65b5916ee2832be8a18343185a4c5752636951ea0",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "bc045131e7fbe2d819b7cf453db8aa412238fe27d15ebb1a5001e8db93ac42dd",
+            "timer_sha256": "c04adbe40afc21914ff0a150d49531f33cbbb9d285aac62d4799bf73b96f11ea",
+            "event_sha256": "80f653d98e3c4b9abdd3001b607d2e8e4ad2e9444ff8c51f0cc4fbc70b2a1e6f",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "authored_constraints_match": true,
+            "pcm_sha256": "bc045131e7fbe2d819b7cf453db8aa412238fe27d15ebb1a5001e8db93ac42dd",
+            "timer_sha256": "c04adbe40afc21914ff0a150d49531f33cbbb9d285aac62d4799bf73b96f11ea",
+            "event_sha256": "80f653d98e3c4b9abdd3001b607d2e8e4ad2e9444ff8c51f0cc4fbc70b2a1e6f",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-off-nop-period-16",
+        "initial_double_speed": true,
+        "rom_sha256": "eaef3bf8d7c136af62c7bbf68d61df195be8796a8ceda512b3b5705b0efa747b",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "99acf1dd514fde68bf63c8807f5edb75640da2f612f149ecb6eb9a4aa298e584",
+            "timer_sha256": "ff971b0c9417a5b8a53aab3161683641c43bf6cf8a083ed8aa920759877faa6b",
+            "event_sha256": "befbf998d2d7e93ae1bf7cccb78015c29694209fc77a0b2a774e9e3b8a3554f4",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "99acf1dd514fde68bf63c8807f5edb75640da2f612f149ecb6eb9a4aa298e584",
+            "timer_sha256": "ff971b0c9417a5b8a53aab3161683641c43bf6cf8a083ed8aa920759877faa6b",
+            "event_sha256": "befbf998d2d7e93ae1bf7cccb78015c29694209fc77a0b2a774e9e3b8a3554f4",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      },
+      {
+        "scenario": "ch2-off-nop-period-28",
+        "initial_double_speed": true,
+        "rom_sha256": "3c324bfe87efae68327367681a8a20d892609303da6ac36957f84666b4618d8d",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "f9033c09cbf78527473bbad99c406a96acd8a2d5abf5fb03e589ff044789d12e",
+            "timer_sha256": "ff971b0c9417a5b8a53aab3161683641c43bf6cf8a083ed8aa920759877faa6b",
+            "event_sha256": "78aedd79143f1002d4df8196829f0926e40d5469bba48aa9ce561d4632b1bd76",
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "authored_constraints_match": true,
+            "pcm_sha256": "f9033c09cbf78527473bbad99c406a96acd8a2d5abf5fb03e589ff044789d12e",
+            "timer_sha256": "ff971b0c9417a5b8a53aab3161683641c43bf6cf8a083ed8aa920759877faa6b",
+            "event_sha256": "78aedd79143f1002d4df8196829f0926e40d5469bba48aa9ce561d4632b1bd76",
+            "repeatable": true
+          }
+        },
+        "pcm_match": true,
+        "timer_match": true
+      }
+    ]
+  },
+  "frequency_lifecycle": {
+    "cases": 48,
+    "full_matching": 48,
+    "baseline_full_matching": 16,
+    "rows": [
+      {
+        "scenario": "ch1-high-retrigger",
+        "initial_double_speed": false,
+        "rom_sha256": "d2c6b5563bc6cad3b94c4665471b098d68c35833bb8f12c989a69280dc493d9c",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "2aa41c7d43fc3e77bbfedd1431218e7cee1a8f525fcd9914990e748ca0b1c140",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "2aa41c7d43fc3e77bbfedd1431218e7cee1a8f525fcd9914990e748ca0b1c140",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch1-high-switch",
+        "initial_double_speed": false,
+        "rom_sha256": "ac8abb8d65ffb06f144bad2fd9e03aab83985fc63af9eb60728928df448441d4",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "30347937ecf2e497edba90560a235e7256d9e17851167c3430d0a1605f1c518f",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "30347937ecf2e497edba90560a235e7256d9e17851167c3430d0a1605f1c518f",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch1-high-switch-retrigger",
+        "initial_double_speed": false,
+        "rom_sha256": "296802850fca6c1b0785520566887c01c4888cddff0e445095653213dbdf7249",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "3d13067328ebe2602c4f51292e7fe2532b5ee0469af1b354d075ad5eb86b1f87",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "3d13067328ebe2602c4f51292e7fe2532b5ee0469af1b354d075ad5eb86b1f87",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch1-low-retrigger",
+        "initial_double_speed": false,
+        "rom_sha256": "ba5b6b1e89ee7e245bbaf3af81d203776c43b251a586693396d398a26a374bcf",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "cfecca611b7b4f4703c843ad1fcd2be75e0c1630f3484d851221ca7f79d1c4fd",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "cfecca611b7b4f4703c843ad1fcd2be75e0c1630f3484d851221ca7f79d1c4fd",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch1-low-switch",
+        "initial_double_speed": false,
+        "rom_sha256": "e0a9bb471d5a5287aba4c9b00fe822ded71124b24b2affd5a9901c58d115a725",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "bd4c2904f307338b4bf824c1e7a51846ec1a45d6ead1b99dfd4f588fce5b341d",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "bd4c2904f307338b4bf824c1e7a51846ec1a45d6ead1b99dfd4f588fce5b341d",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch1-low-switch-retrigger",
+        "initial_double_speed": false,
+        "rom_sha256": "5942b22df2a68aa5182de02c1bae7c5220c1d537e1b6f7bd23f3fdacfdc2be4e",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "41e7cd422a2a964ec9367f1abf7a0630785a7a6e8cb8a38362bcebabf806354f",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "41e7cd422a2a964ec9367f1abf7a0630785a7a6e8cb8a38362bcebabf806354f",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch1-control-retrigger",
+        "initial_double_speed": false,
+        "rom_sha256": "bb230efeb6bca63822d8312e96478364b09e3f02141684b062d3177af6294cd0",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "e5acd3e6cea33b2cbabb7410b66ef938c696389ab7b7ded7f2d2d388cb3900f1",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "e5acd3e6cea33b2cbabb7410b66ef938c696389ab7b7ded7f2d2d388cb3900f1",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch1-control-switch",
+        "initial_double_speed": false,
+        "rom_sha256": "2e2d9c134c8347779eac8abd6781a4a804df69b4a159348b7e0ea33e4e107431",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "4936490bc7a20e0a0328bc36289fa7b6ea1efc16d08bc9ad18e919d8a32d5a3f",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "4936490bc7a20e0a0328bc36289fa7b6ea1efc16d08bc9ad18e919d8a32d5a3f",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch1-control-switch-retrigger",
+        "initial_double_speed": false,
+        "rom_sha256": "ca94379a9e9b221eb2213cba4a0c55789b1f0f814cc8f5142df0970b72e7e16f",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "0ac38c188ea32081a64e29dc9ace581c65060f8dfc03d416d598818e122424b7",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "0ac38c188ea32081a64e29dc9ace581c65060f8dfc03d416d598818e122424b7",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch1-observe-retrigger",
+        "initial_double_speed": false,
+        "rom_sha256": "26ea744f9cc7c9d88a266e5845797ba40635801738b8763c1629b25bdd938739",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "e5acd3e6cea33b2cbabb7410b66ef938c696389ab7b7ded7f2d2d388cb3900f1",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "e5acd3e6cea33b2cbabb7410b66ef938c696389ab7b7ded7f2d2d388cb3900f1",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch1-observe-switch",
+        "initial_double_speed": false,
+        "rom_sha256": "b019a820e65d822c9532c72e1d13686265b268b09c4a0f25ac5dba84b03ff7a6",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "4936490bc7a20e0a0328bc36289fa7b6ea1efc16d08bc9ad18e919d8a32d5a3f",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "4936490bc7a20e0a0328bc36289fa7b6ea1efc16d08bc9ad18e919d8a32d5a3f",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch1-observe-switch-retrigger",
+        "initial_double_speed": false,
+        "rom_sha256": "6d1e523e47e86e9878af2035e478f698b090c40726bf0a5a8cf012b2491bc913",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "0ac38c188ea32081a64e29dc9ace581c65060f8dfc03d416d598818e122424b7",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "0ac38c188ea32081a64e29dc9ace581c65060f8dfc03d416d598818e122424b7",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-high-retrigger",
+        "initial_double_speed": false,
+        "rom_sha256": "77aceadb3103ca0debf9b018c6067963b32934e7eb6114f21551fcb22d4b5380",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "2aa41c7d43fc3e77bbfedd1431218e7cee1a8f525fcd9914990e748ca0b1c140",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "2aa41c7d43fc3e77bbfedd1431218e7cee1a8f525fcd9914990e748ca0b1c140",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-high-switch",
+        "initial_double_speed": false,
+        "rom_sha256": "5cd734c4adbff0ce429715f72d6a0f745dc6279f39524b64f35ff5c7c7b12c3f",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "30347937ecf2e497edba90560a235e7256d9e17851167c3430d0a1605f1c518f",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "30347937ecf2e497edba90560a235e7256d9e17851167c3430d0a1605f1c518f",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-high-switch-retrigger",
+        "initial_double_speed": false,
+        "rom_sha256": "787654356b40725c5b3872eaa61176ce88f821b57d5d0a64fcd1b4fdd3e9200b",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "3d13067328ebe2602c4f51292e7fe2532b5ee0469af1b354d075ad5eb86b1f87",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "3d13067328ebe2602c4f51292e7fe2532b5ee0469af1b354d075ad5eb86b1f87",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-low-retrigger",
+        "initial_double_speed": false,
+        "rom_sha256": "25a1d9c654bc98bc76c26abee58bf867d8aa15e708af90439c66ff7fa499afe6",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "cfecca611b7b4f4703c843ad1fcd2be75e0c1630f3484d851221ca7f79d1c4fd",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "cfecca611b7b4f4703c843ad1fcd2be75e0c1630f3484d851221ca7f79d1c4fd",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-low-switch",
+        "initial_double_speed": false,
+        "rom_sha256": "476f0a763372716bd8c5eb5ed8223f439e4d63012433df7b4cd4704f16b76487",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "bd4c2904f307338b4bf824c1e7a51846ec1a45d6ead1b99dfd4f588fce5b341d",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "bd4c2904f307338b4bf824c1e7a51846ec1a45d6ead1b99dfd4f588fce5b341d",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-low-switch-retrigger",
+        "initial_double_speed": false,
+        "rom_sha256": "fc1e2ff8036054ac6fcc1838c600c8f1371d32cadc2cbf6f0b92f9f199852470",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "41e7cd422a2a964ec9367f1abf7a0630785a7a6e8cb8a38362bcebabf806354f",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "41e7cd422a2a964ec9367f1abf7a0630785a7a6e8cb8a38362bcebabf806354f",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-control-retrigger",
+        "initial_double_speed": false,
+        "rom_sha256": "722443d4d29a7d52478d9f04382b06fd5e7a2bdfcacc6613ec2639fd2b2f0123",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "e5acd3e6cea33b2cbabb7410b66ef938c696389ab7b7ded7f2d2d388cb3900f1",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "e5acd3e6cea33b2cbabb7410b66ef938c696389ab7b7ded7f2d2d388cb3900f1",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-control-switch",
+        "initial_double_speed": false,
+        "rom_sha256": "3164b85f85a678d3b5e9f8a1f9253dcb860ef87bcd51ce0489d24eddec790718",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "4936490bc7a20e0a0328bc36289fa7b6ea1efc16d08bc9ad18e919d8a32d5a3f",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "4936490bc7a20e0a0328bc36289fa7b6ea1efc16d08bc9ad18e919d8a32d5a3f",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-control-switch-retrigger",
+        "initial_double_speed": false,
+        "rom_sha256": "810a40c986000c838d78844bac3dc78a4a2b2fc71b99803b9bd935c753b7963a",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "0ac38c188ea32081a64e29dc9ace581c65060f8dfc03d416d598818e122424b7",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "0ac38c188ea32081a64e29dc9ace581c65060f8dfc03d416d598818e122424b7",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-observe-retrigger",
+        "initial_double_speed": false,
+        "rom_sha256": "097e85bbf599df2e16ae743176405f5b04c8c58758b98c579bc2997e8923220b",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "e5acd3e6cea33b2cbabb7410b66ef938c696389ab7b7ded7f2d2d388cb3900f1",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "e5acd3e6cea33b2cbabb7410b66ef938c696389ab7b7ded7f2d2d388cb3900f1",
+            "initial_double_speed": false,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-observe-switch",
+        "initial_double_speed": false,
+        "rom_sha256": "5dac7d7babdee3dcf051bd951bf72d89aac9871aee705f058581bba94dac8396",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "4936490bc7a20e0a0328bc36289fa7b6ea1efc16d08bc9ad18e919d8a32d5a3f",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "4936490bc7a20e0a0328bc36289fa7b6ea1efc16d08bc9ad18e919d8a32d5a3f",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-observe-switch-retrigger",
+        "initial_double_speed": false,
+        "rom_sha256": "45bbb14e0a4682ffac30de212e405597004ab1eaa6694429bdba587b35ba0022",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "0ac38c188ea32081a64e29dc9ace581c65060f8dfc03d416d598818e122424b7",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "0ac38c188ea32081a64e29dc9ace581c65060f8dfc03d416d598818e122424b7",
+            "initial_double_speed": false,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch1-high-retrigger",
+        "initial_double_speed": true,
+        "rom_sha256": "a328b499a71009b67ad953348857bb7adff893af9d9f2b51e244728f4f070a3e",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "f9b1a26297780529d616a653e409e99098dfa97e958abc7224a5d19fef7ae83e",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "f9b1a26297780529d616a653e409e99098dfa97e958abc7224a5d19fef7ae83e",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch1-high-switch",
+        "initial_double_speed": true,
+        "rom_sha256": "0953b3205278b0411f52c17ac2a8de882a85adb2b75ef10f648901cca3330a0d",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "d164c2f974bdf3423800e1e82a34ac21959f09ceeb169826f42f01760ce79abf",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "d164c2f974bdf3423800e1e82a34ac21959f09ceeb169826f42f01760ce79abf",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch1-high-switch-retrigger",
+        "initial_double_speed": true,
+        "rom_sha256": "3ebe7b9b7925602d80a706e758e1156c08470685442b7a8470b321392f487251",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "21c40e01ef96468a4063e75c23037ee3de331deeb6c1f0ab7ddaad7a56002a4d",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "21c40e01ef96468a4063e75c23037ee3de331deeb6c1f0ab7ddaad7a56002a4d",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch1-low-retrigger",
+        "initial_double_speed": true,
+        "rom_sha256": "4e45e5e1e6544a436406b7dcfe62f094b143f2f234112283c5b1031915e33b93",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "81fa32f69495ee3a4090dea9c51e4d1176d2c052fd968337658b64fd21f9831e",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "81fa32f69495ee3a4090dea9c51e4d1176d2c052fd968337658b64fd21f9831e",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch1-low-switch",
+        "initial_double_speed": true,
+        "rom_sha256": "eadea5dd8e58c36f0bb8fe9990d96f8a7f64898fe2357616c96156c50512f888",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "ea611ab7555eaa778f8c017a47eb6034863b3a382e469da41e5b8b38694b31f1",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "ea611ab7555eaa778f8c017a47eb6034863b3a382e469da41e5b8b38694b31f1",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch1-low-switch-retrigger",
+        "initial_double_speed": true,
+        "rom_sha256": "f4e951ce5165514d0485b265baed993e0e6802ce0d2b1cfd57cd0dfa06154be0",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "d23487d2ce429ca642eed617dbb8fdae62c78ba9504bac41831e850e3e4f2ed4",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "d23487d2ce429ca642eed617dbb8fdae62c78ba9504bac41831e850e3e4f2ed4",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch1-control-retrigger",
+        "initial_double_speed": true,
+        "rom_sha256": "ca01caa7fb9e0416f397faa021cd8f10a4c9dfe3b8b71e984684e5ac98c22b57",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "83f9ac283e10f8d37ed1292484065d8fd18e07695c024f3944a4d0b34a1810db",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "83f9ac283e10f8d37ed1292484065d8fd18e07695c024f3944a4d0b34a1810db",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch1-control-switch",
+        "initial_double_speed": true,
+        "rom_sha256": "79cb7e980cfd4e7161cfadaac9930cd5518be6b23592bb866617b22661784158",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "80315bc444bd276931ee2f88a594063d69dbc80aa81fa4bd58dbddfe5b845a61",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "80315bc444bd276931ee2f88a594063d69dbc80aa81fa4bd58dbddfe5b845a61",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch1-control-switch-retrigger",
+        "initial_double_speed": true,
+        "rom_sha256": "d2081bb977181f00f302bfaa7d6d01d2f04dba1caa90b38f49afa1def193d4d7",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "f3ac0cb611cd40633055ae18a0d44ed825804b4ee36728037d6f8c8a7ed59be9",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "f3ac0cb611cd40633055ae18a0d44ed825804b4ee36728037d6f8c8a7ed59be9",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch1-observe-retrigger",
+        "initial_double_speed": true,
+        "rom_sha256": "39b087a6ef0d2a6009a6c0c79ce0020630a65df81d84696d65d4e8987ce41955",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "83f9ac283e10f8d37ed1292484065d8fd18e07695c024f3944a4d0b34a1810db",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "83f9ac283e10f8d37ed1292484065d8fd18e07695c024f3944a4d0b34a1810db",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch1-observe-switch",
+        "initial_double_speed": true,
+        "rom_sha256": "d7ac29a797cf23a812dc0c96b55c0cb9e2921a5ee2e7414cae0393e082d2f78c",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "80315bc444bd276931ee2f88a594063d69dbc80aa81fa4bd58dbddfe5b845a61",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "80315bc444bd276931ee2f88a594063d69dbc80aa81fa4bd58dbddfe5b845a61",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch1-observe-switch-retrigger",
+        "initial_double_speed": true,
+        "rom_sha256": "a6c0b796598762c45cdc6db10024e6357bd6f14bf3edf57bdd5daaf24bd9a217",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "f3ac0cb611cd40633055ae18a0d44ed825804b4ee36728037d6f8c8a7ed59be9",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "f3ac0cb611cd40633055ae18a0d44ed825804b4ee36728037d6f8c8a7ed59be9",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-high-retrigger",
+        "initial_double_speed": true,
+        "rom_sha256": "bf4acea3a4642a71260e19d5a343be9c25fe8c503f82449cff3ab564171cae40",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "f9b1a26297780529d616a653e409e99098dfa97e958abc7224a5d19fef7ae83e",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "f9b1a26297780529d616a653e409e99098dfa97e958abc7224a5d19fef7ae83e",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-high-switch",
+        "initial_double_speed": true,
+        "rom_sha256": "c8a8b213a85e13ea35fcd798d715cbb9e93fdc3535cf77a5d46b6836d66353e1",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "d164c2f974bdf3423800e1e82a34ac21959f09ceeb169826f42f01760ce79abf",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "d164c2f974bdf3423800e1e82a34ac21959f09ceeb169826f42f01760ce79abf",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-high-switch-retrigger",
+        "initial_double_speed": true,
+        "rom_sha256": "f61220d6a969ae26ad1e8cbd44dd4eaf1ff8ed63471773a3672a2c7006d62634",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "21c40e01ef96468a4063e75c23037ee3de331deeb6c1f0ab7ddaad7a56002a4d",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "21c40e01ef96468a4063e75c23037ee3de331deeb6c1f0ab7ddaad7a56002a4d",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-low-retrigger",
+        "initial_double_speed": true,
+        "rom_sha256": "e75593bcd82751effc7429dd546b58c9d451f60e870eb5d5962d23f5ae12b3ac",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "81fa32f69495ee3a4090dea9c51e4d1176d2c052fd968337658b64fd21f9831e",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "81fa32f69495ee3a4090dea9c51e4d1176d2c052fd968337658b64fd21f9831e",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-low-switch",
+        "initial_double_speed": true,
+        "rom_sha256": "bec3f4f1615ed5a6cdf3d50521d2549c748238dc8074f6899b3581050ee8fe78",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "ea611ab7555eaa778f8c017a47eb6034863b3a382e469da41e5b8b38694b31f1",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "ea611ab7555eaa778f8c017a47eb6034863b3a382e469da41e5b8b38694b31f1",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-low-switch-retrigger",
+        "initial_double_speed": true,
+        "rom_sha256": "241c5ac16349bcb6b5e5fbf793faa0f68edf6a1a343454feb056738a0d62101b",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "d23487d2ce429ca642eed617dbb8fdae62c78ba9504bac41831e850e3e4f2ed4",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "d23487d2ce429ca642eed617dbb8fdae62c78ba9504bac41831e850e3e4f2ed4",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-control-retrigger",
+        "initial_double_speed": true,
+        "rom_sha256": "29cee3e23e819a0ae3a4171d9c47c63f68b5c7da7aa36fda78b72e6fce4c9783",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "83f9ac283e10f8d37ed1292484065d8fd18e07695c024f3944a4d0b34a1810db",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "83f9ac283e10f8d37ed1292484065d8fd18e07695c024f3944a4d0b34a1810db",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-control-switch",
+        "initial_double_speed": true,
+        "rom_sha256": "da6e500ff7650f0efef91dc0b3717fc10008fa3b7fe51287e9d22c2e821925e6",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "80315bc444bd276931ee2f88a594063d69dbc80aa81fa4bd58dbddfe5b845a61",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "80315bc444bd276931ee2f88a594063d69dbc80aa81fa4bd58dbddfe5b845a61",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-control-switch-retrigger",
+        "initial_double_speed": true,
+        "rom_sha256": "cce5581eb7cd94385c05197232966a3d5f44f95261387c411bd3575d6ca25e06",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "f3ac0cb611cd40633055ae18a0d44ed825804b4ee36728037d6f8c8a7ed59be9",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "f3ac0cb611cd40633055ae18a0d44ed825804b4ee36728037d6f8c8a7ed59be9",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-observe-retrigger",
+        "initial_double_speed": true,
+        "rom_sha256": "88bde5b89c12d79408246fae6092877f62c224af91058dc1bd7aa35c26945964",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "83f9ac283e10f8d37ed1292484065d8fd18e07695c024f3944a4d0b34a1810db",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "83f9ac283e10f8d37ed1292484065d8fd18e07695c024f3944a4d0b34a1810db",
+            "initial_double_speed": true,
+            "final_double_speed": true,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-observe-switch",
+        "initial_double_speed": true,
+        "rom_sha256": "c2eb4381bed050174c17e87b5e51253a9527a9740f9989664cc7ae7276fae4e9",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "80315bc444bd276931ee2f88a594063d69dbc80aa81fa4bd58dbddfe5b845a61",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "80315bc444bd276931ee2f88a594063d69dbc80aa81fa4bd58dbddfe5b845a61",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      },
+      {
+        "scenario": "ch2-observe-switch-retrigger",
+        "initial_double_speed": true,
+        "rom_sha256": "3caed2ea9391678d74af747c97425460ae72515703964429b9c3b0a42388c7e3",
+        "match": true,
+        "captures": {
+          "gbb": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "f3ac0cb611cd40633055ae18a0d44ed825804b4ee36728037d6f8c8a7ed59be9",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          },
+          "sameboy": {
+            "rgb_sha256": "a8fd2e78a831e046e548454d1f0863dd7c3f29bc8e5db3cfe1b1d3536a292462",
+            "authored_constraints_match": true,
+            "event_sha256": "f3ac0cb611cd40633055ae18a0d44ed825804b4ee36728037d6f8c8a7ed59be9",
+            "initial_double_speed": true,
+            "final_double_speed": false,
+            "repeatable": true
+          }
+        }
+      }
+    ]
+  },
+  "regression": {
+    "conformance_pass": 168,
+    "conformance_fail": 0,
+    "focused_contracts_pass": 30,
+    "samesuite_statuses_unchanged": 84,
+    "samesuite": {
+      "pass_count": 56,
+      "fail_count": 20,
+      "unsupported_count": 6,
+      "info_count": 2
+    }
+  },
+  "limits": [
+    "Reference parity of authored LCD-off WRAM PCM/timer events is not hardware qualification or audio waveform equivalence.",
+    "All matrix cases repeat and retain channel-pair agreement; no cartridge assets are committed.",
+    "Reference timing stamps are GB_run API-call boundaries, not physical instruction-fetch edges.",
+    "The normalized timing-window residuals of +4/-2 ticks remain visible and fail the exact timing comparison.",
+    "LCD-on VRAM/OAM locking and other hardware-revision transitions remain unqualified."
+  ]
+}

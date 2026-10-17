@@ -44,16 +44,20 @@ void test_cgb_timer_clock_during_interrupt_entry() {
                              gameboy::HardwareModel::cgb_e,
                              gameboy::HardwareModel::agb}) {
         for (const bool double_speed : {false, true}) for (const auto request : {4, 6}) {
-            gameboy::MemoryBus bus{gameboy::Cartridge{test_rom(double_speed
-                ? std::vector<std::uint8_t>{0x10, 0x00, 0xFB, 0x00}
-                : std::vector<std::uint8_t>{0xFB, 0x00})}};
+            auto image = test_rom(double_speed
+                ? std::vector<std::uint8_t>{0x10, 0x00, 0x00, 0xFB, 0x00}
+                : std::vector<std::uint8_t>{0xFB, 0x00});
+            image[0x143] = 0x80; // KEY1 is unavailable in CGB compatibility mode.
+            gameboy::MemoryBus bus{gameboy::Cartridge{std::move(image)}};
             bus.initialize_post_boot(model);
             gameboy::Cpu cpu;
             cpu.load_registers(initial_registers());
             if (double_speed) {
                 bus.write8(0xFF4D, 1);
-                check(cpu.step(bus) == 4 && (bus.read8(0xFF4D) & 0x80) != 0,
+                check(cpu.step(bus) == 4 && bus.double_speed(),
                       "CGB timer-entry setup switches speed through STOP");
+                while (cpu.debug_speed_switch_cycles_remaining()) static_cast<void>(cpu.step(bus));
+                static_cast<void>(cpu.step(bus)); // Isolate first-resume NOP from EI timing.
             }
             bus.write8(0xFF07, 0);
             bus.write8(0xFF04, 0);

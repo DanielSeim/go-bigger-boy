@@ -100,6 +100,7 @@ void MemoryBus::initialize_work_ram_power_on() noexcept {
 }
 
 void MemoryBus::initialize_post_boot(const HardwareModel model) noexcept {
+    staged_speed_switch_ = model == HardwareModel::cgb || model == HardwareModel::cgb_e;
     sgb_host_audio_.clear();
     // The selected hardware profile controls the CPU-visible mode.  A
     // cartridge can advertise CGB compatibility while still being run in an
@@ -194,6 +195,8 @@ void MemoryBus::initialize_dmg_power_on() {
     speed_switch_requested_ = false;
     last_ppu_requests_ = 0;
     debug_bus_cycles_ = 0;
+    normalized_clocks_ = 0;
+    staged_speed_switch_ = false;
     timer_paused_ = false;
     debug_io_trace_.clear();
     if (printer_connected_) printer_.reset();
@@ -202,6 +205,7 @@ void MemoryBus::initialize_dmg_power_on() {
 void MemoryBus::initialize_cgb_power_on(const HardwareModel model) {
     initialize_dmg_power_on();
     apu_.initialize_power_on(model);
+    staged_speed_switch_ = model == HardwareModel::cgb || model == HardwareModel::cgb_e;
     cgb_hardware_ = true;
     cgb_mode_ = cartridge_.supports_cgb();
     ppu_.set_cgb_mode(cgb_mode_);
@@ -214,6 +218,7 @@ void MemoryBus::initialize_cgb_power_on(const HardwareModel model) {
 void MemoryBus::initialize_sgb_power_on(const HardwareModel model) {
     initialize_dmg_power_on();
     apu_.initialize_power_on(model);
+    staged_speed_switch_ = model == HardwareModel::cgb || model == HardwareModel::cgb_e;
     ppu_.set_sgb_mode(true);
     static_cast<void>(joypad_.write(0x30));
     sgb_adapter_.set_enabled(true);
@@ -457,6 +462,7 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
 
 void MemoryBus::tick(const unsigned cycles) noexcept {
     debug_bus_cycles_ += cycles;
+    normalized_clocks_ += static_cast<std::uint64_t>(cycles) * (double_speed_ ? 1 : 2);
     const auto peripheral_cycles = double_speed_ ? cycles / 2 : cycles;
     // OAM DMA takes 160 CPU M-cycles at either speed (320 PPU dots in
     // CGB double speed). HRAM delay routines must finish before WRAM RETs.

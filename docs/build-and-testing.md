@@ -786,7 +786,7 @@ ROM/executable hashes, repeated observations and differing indices, with
 `gameboy_cgb_pulse_retrigger_probe_contract` runs offline; set
 `GBB_TEST_RUNNER` and `GBB_SAMEBOY_CGB_CAPTURE` for the complete native matrix
 in `tests/cgb_pulse_retrigger_probe_tests.py`. The lifecycle native contract now
-requires parity for all retrigger-only cases while retaining STOP differences.
+requires parity for all 48 cases, including the speed switches.
 
 `scripts/cgb_stop_apu_probe.py` isolates STOP speed switches with active,
 configured-but-untriggered and powered-off APU controls. Use `--runner`,
@@ -797,17 +797,19 @@ switches and single-NOP controls. Each case records 128 PCM12/NR52/KEY1/DIV/
 TIMA/IF observations, preserving separate PCM and timer comparisons. NR52,
 initial/final KEY1, completion and the adjacent WRAM guard validate each log.
 The output retains all differences and returns 1 for disagreement, with
-`qualification=false`; capture errors return 2. Timer and active-channel
-switch differences remain unresolved.
+`qualification=false`; capture errors return 2. All 48 cases now match PCM and timer observations with the staged CGB-E
+transition; the native contract requires full parity. Timing-window boundary
+comparisons remain separate.
 
-These longer STOP controls use bounded limits of 100 million GBB CPU T-cycles
+These longer STOP controls and the frequency lifecycle matrix use bounded
+limits of 100 million GBB CPU T-cycles
 and 200 million reference 8-MHz clocks per capture, with the existing 30-second
 child timeout. The shared harness's default limits remain 20/40 million;
 offline tests verify defaults, overrides and invalid-budget rejection before
 output creation. `gameboy_cgb_stop_apu_probe_contract` runs offline. Set
 `GBB_TEST_RUNNER` and `GBB_SAMEBOY_CGB_CAPTURE` for the full native matrix in
-`tests/cgb_stop_apu_probe_tests.py`. Known differences are not required to
-persist; no-switch parity and post-switch channel-start PCM parity are checked.
+`tests/cgb_stop_apu_probe_tests.py`. Native checks require repeatability, channel-pair agreement and PCM/timer
+parity for every case.
 
 `scripts/cgb_stop_timing_probe.py` measures a single operation and resumed
 instruction, without relying on frame callbacks or seeing only a PC advance
@@ -822,10 +824,14 @@ CPU T-cycle and 8-MHz clock fields, callback/register witnesses, commands and
 executable/ROM hashes. Reference calibration includes the first resume callback,
 completion of that instruction, and the subsequent steady NOP boundary.
 
-The GBB conversion to 8-MHz clocks states its current atomic-STOP partition
-assumption explicitly; it must be replaced with direct normalized clock
-instrumentation when implementing a staged transition. Timing or register
-disagreements return 1, malformed/incomplete witnesses return 2, and successful
+Version 2 of the timing report uses `CPU_FIRST_PC normalized_8mhz`, accumulated
+by the bus at its actual speed, including transition idle steps. This field is
+also emitted on recent/history records at instruction exit; `cycle` retains
+its existing CPU T-cycle meaning. State version 44 retains the bus clock epoch
+and in-flight transition. Older states resume their saved atomic STOP behavior
+and begin a new normalized clock epoch at zero. The historical version-1 report
+used an atomic-STOP speed partition and remains recorded as baseline evidence.
+Timing or register disagreements return 1, malformed/incomplete witnesses return 2, and successful
 comparisons retain `qualification=false`. `gameboy_cgb_stop_timing_probe_contract`
 runs offline. Set `GBB_TEST_RUNNER` and `GBB_SAMEBOY_CGB_CAPTURE` (the rebuilt
 adapter) to run the full native matrix and invalid-argument/timeout checks in

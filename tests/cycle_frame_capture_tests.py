@@ -22,6 +22,9 @@ def cartridge(program, *, color=False):
 
 LCD_OFF = bytes((0xF3, 0xAF, 0xE0, 0x40))  # DI; XOR A; LDH [LCDC],A
 LOOP = bytes((0x18, 0xFE))
+# Explicit FF DMA bus data: power-on WRAM is intentionally nonuniform.
+FILL_DMA_SOURCE = bytes.fromhex('21 00 c0 06 a0 3e ff 22 05 20 fc')
+CLEAR_BG_MAP = bytes.fromhex('21 00 98 01 00 04 36 00 23 0b 78 b1 20 f8')
 
 
 class CycleFrameCaptureTests(unittest.TestCase):
@@ -122,11 +125,12 @@ class CycleFrameCaptureTests(unittest.TestCase):
             0x21, 0x00, 0x80, 0x06, 8, 0x3E, 0xFF,
             0x22, 0x05, 0x20, 0xFC,
             0x06, 8, 0xAF, 0x22, 0x05, 0x20, 0xFC,
+        )) + CLEAR_BG_MAP + bytes((
             0x3E, 0xE4, 0xE0, 0x47,
             0x3E, 0x91, 0xE0, 0x40)) + LOOP
         self.rom.write_bytes(cartridge(program))
-        result = self.capture(3)
-        self.check_capture(result, 3)
+        result = self.capture(4)
+        self.check_capture(result, 4)
         fields = dict(part.split('=') for part in result.stderr.split()[1:])
         self.assertEqual(fields['lcdc'], '91')
         self.assertEqual(fields['unique_colors'], '2')
@@ -134,7 +138,7 @@ class CycleFrameCaptureTests(unittest.TestCase):
         self.assertEqual(int(fields['completed_frames']), 3)
         timed = self.output.read_bytes()
         old = self.run_rom('--frames', 3, '--frame-output', self.output,
-                           '--max-cycles', 4 * FRAME_CYCLES)
+                           '--max-cycles', 5 * FRAME_CYCLES)
         self.assertEqual(old.returncode, 0, old.stderr)
         self.assertNotIn('CAPTURE_DIAGNOSTICS', old.stderr)
         self.assertEqual(timed, self.output.read_bytes())
@@ -214,7 +218,7 @@ class CycleFrameCaptureTests(unittest.TestCase):
             self.assertRegex(line, r'^' + prefix + r' cycle=\d+ duration=\d+ '
                              r'pc=(?:[0-9a-f]{4}|none) opcode=(?:[0-9a-f]{2}|none) '
                              r'next_pc=[0-9a-f]{4} (?:sp=[0-9a-f]{4}|sp_before=[0-9a-f]{4} sp_after=[0-9a-f]{4}) af=[0-9a-f]{4} '
-                             r'bc=[0-9a-f]{4} de=[0-9a-f]{4} hl=[0-9a-f]{4}'
+                             r'bc=[0-9a-f]{4} de=[0-9a-f]{4} hl=[0-9a-f]{4} normalized_8mhz=\d+'
                              r'(?: transition=(?:instruction|interrupt|initial))?$')
             rows.append(dict(part.split('=') for part in line.split()[1:]))
         return rows
@@ -246,7 +250,10 @@ class CycleFrameCaptureTests(unittest.TestCase):
         self.assertEqual(len(recent), 3)
         for row, line in zip(recent, trace.read_text().splitlines()[-3:]):
             expected = dict(part.split('=') for part in line.split())
-            for key, value in row.items():self.assertEqual(value, expected[key])
+            for key, value in row.items():
+                if key != 'normalized_8mhz': self.assertEqual(value, expected[key])
+            self.assertEqual(int(row['normalized_8mhz']),
+                             2 * (int(row['cycle']) + int(row['duration'])))
         self.assertTrue(all(line.startswith('CPU_RECENT ') for line in combined.stderr.splitlines()[-4:-1]))
         for args, prefix in ((('--trace-recent-cpu', 1), 'CPU_RECENT'),
                              (('--trace-first-pc', '56'), 'CPU_FIRST_PC')):
@@ -328,7 +335,7 @@ class CycleFrameCaptureTests(unittest.TestCase):
     def test_stack_snapshot_distinguishes_dma_blocking_from_corruption(self):
         # No wait on purpose: RET while WRAM DMA is active must read FF.
         routine = bytes((0x3E,0xC0,0xE0,0x46,0,0,0xC9))
-        program = LCD_OFF + bytes((0x31,0x02,0xD0,0x21,0x80,0xFF))
+        program = LCD_OFF + FILL_DMA_SOURCE + bytes((0x31,0x02,0xD0,0x21,0x80,0xFF))
         for value in routine:
             program += bytes((0x3E,value,0x22))  # LD A,value; LD [HL+],A
         call_pc = 0x150 + len(program)
@@ -377,7 +384,7 @@ class CycleFrameCaptureTests(unittest.TestCase):
 
     def test_stack_snapshot_labels_dma_boundary_before_ret(self):
         routine = bytes((0x3E,0xC0,0xE0,0x46,0x3E,40,0x3D,0x20,0xFD,0xC9))
-        program = LCD_OFF + bytes((0x31,0x02,0xD0,0x21,0x80,0xFF))
+        program = LCD_OFF + FILL_DMA_SOURCE + bytes((0x31,0x02,0xD0,0x21,0x80,0xFF))
         for value in routine:
             program += bytes((0x3E,value,0x22))
         return_pc = 0x150 + len(program) + 3
@@ -425,10 +432,10 @@ class CycleFrameCaptureTests(unittest.TestCase):
         rows = self.flow_lines(result, 'CPU_RECENT')
         self.assertFalse(any(r['next_pc']=='0040' for r in rows))
         # After DMA's startup delay, actual FF differs from the stored NOP.
-        self.rom.write_bytes(cartridge(LCD_OFF + bytes((0x3E,0xC0,0xE0,0x46,0x00,0x00)) + LOOP))
+        self.rom.write_bytes(cartridge(LCD_OFF + FILL_DMA_SOURCE + bytes((0x3E,0xC0,0xE0,0x46,0x00,0x00)) + LOOP))
         dma = self.capture(2, '--trace-first-pc', '0x38')
         first, = self.flow_lines(dma, 'CPU_FIRST_PC')
-        self.assertEqual((first['pc'],first['opcode'],first['transition']), ('0159','ff','instruction'))
+        self.assertEqual((first['pc'],first['opcode'],first['transition']), (f'{0x150 + len(LCD_OFF + FILL_DMA_SOURCE) + 5:04x}','ff','instruction'))
 
     def test_flow_option_validation_and_protocol_mode(self):
         for args in (('--trace-recent-cpu','0'),('--trace-recent-cpu','4097'),

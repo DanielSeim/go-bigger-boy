@@ -79,6 +79,9 @@ public:
         return last_ppu_requests_;
     }
     [[nodiscard]] bool double_speed() const noexcept;
+    [[nodiscard]] bool staged_speed_switch() const noexcept { return staged_speed_switch_; }
+    // Elapsed bus time in 8-MHz ticks, independent of CPU speed.
+    [[nodiscard]] std::uint64_t debug_normalized_clocks() const noexcept { return normalized_clocks_; }
     struct OamDmaDiagnostics {
         bool active;
         std::uint16_t source;
@@ -225,6 +228,8 @@ private:
     std::uint8_t hdma_blocks_remaining_{};
     bool hdma_active_{};
     bool double_speed_{};
+    bool staged_speed_switch_{}; // Derived hardware profile; not serialized.
+    std::uint64_t normalized_clocks_{};
     bool speed_switch_requested_{};
     std::uint8_t last_ppu_requests_{};
     std::uint64_t debug_bus_cycles_{};

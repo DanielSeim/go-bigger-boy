@@ -36,6 +36,9 @@ public:
         payload.u64(emulator.splash_enabled_
             ? boot_splash_sample_time(emulator.cpu_.total_cycles()) : 0);
         SaveStateCartridgeCodec::write_extra(payload, emulator.bus_.cartridge_);
+        payload.u32(emulator.cpu_.speed_switch_cycles_);
+        payload.boolean(emulator.cpu_.speed_switch_resume_);
+        payload.u64(emulator.bus_.normalized_clocks_);
         return save_state_container::encode(emulator.rom_fingerprint(),
                                             payload.data());
     }
@@ -72,6 +75,20 @@ public:
         if (decoded.version >= 43) SaveStateCartridgeCodec::read_extra(payload, emulator.bus_.cartridge_);
         else if (emulator.bus_.cartridge_.extra_)
             throw SaveStateError("Save state predates this cartridge controller implementation");
+        emulator.cpu_.speed_switch_cycles_ = 0;
+        emulator.cpu_.speed_switch_resume_ = false;
+        emulator.bus_.normalized_clocks_ = 0; // Older states have no clock epoch.
+        if (decoded.version >= 44) {
+            const auto remaining = payload.u32();
+            const auto resume = payload.boolean();
+            if (remaining > (emulator.bus_.double_speed() ? 131084U : 131072U) || (remaining % 4) != 0 || (remaining && !resume) ||
+                (resume && (!emulator.bus_.staged_speed_switch() || !emulator.bus_.cgb_mode() ||
+                            emulator.cpu_.stopped_ || emulator.cpu_.halted_)))
+                throw SaveStateError("Invalid CGB speed transition state");
+            emulator.cpu_.speed_switch_cycles_ = remaining;
+            emulator.cpu_.speed_switch_resume_ = resume;
+            emulator.bus_.normalized_clocks_ = payload.u64();
+        }
         payload.finish();
         if (emulator.splash_enabled_) {
             if (!emulator.splash_pixels_)

@@ -88,7 +88,7 @@ def first_pc(result, target):
                 stacks.append(fields)
     if len(stacks) != 1 or stacks[0]['double_speed'] not in ('true', 'false'):
         raise ValueError('missing CPU speed witness')
-    return dict(cpu_t_cycles=cycle, instruction_t_cycles=duration,
+    return dict(cpu_t_cycles=cycle, normalized_8mhz_clocks=int(record['normalized_8mhz']), instruction_t_cycles=duration,
                 previous_pc=int(record['pc'], 16), opcode=int(record['opcode'], 16),
                 double_speed=stacks[0]['double_speed'] == 'true', bc=int(record['bc'], 16))
 
@@ -149,10 +149,10 @@ def run_probe(runner, adapter, output):
     boot = output / 'owned-cgb-boot.bin'
     boot.write_bytes(anchor.owned_boot())
     sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
-    report = dict(schema='gbb-cgb-stop-timing-probe-v1', qualification=False, model='cgb-e',
+    report = dict(schema='gbb-cgb-stop-timing-probe-v2', qualification=False, model='cgb-e',
                   runner_sha256=sha(runner), adapter_sha256=sha(adapter), boot_sha256=sha(boot),
                   interval='operation_and_first_resumed_instruction',
-                  conversion_assumption='Current GBB atomic operation cycles at initial speed; resumed instruction at final speed',
+                  clock_source='GBB bus clock accumulated at actual speed; reference GB_run call boundaries',
                   commands=[], rows=[])
     def execute(command):
         report['commands'].append(list(map(str, command)))
@@ -180,11 +180,13 @@ def run_probe(runner, adapter, output):
                             raise ValueError('GBB window instruction/speed witness mismatch')
                         elapsed = exit['cpu_t_cycles'] - entry['cpu_t_cycles']
                         tail = exit['instruction_t_cycles']
-                        if tail != 4 * len(resume_instruction(scenario)) or elapsed <= tail:
+                        if tail != 4 * (len(resume_instruction(scenario)) + int(switched)) or elapsed <= tail:
                             raise ValueError('invalid GBB clock window')
-                        converted = (elapsed - tail) * (1 if initial else 2) + tail * (1 if final else 2)
+                        converted = exit['normalized_8mhz_clocks'] - entry['normalized_8mhz_clocks']
+                        if converted <= 0:
+                            raise ValueError('invalid normalized clock interval')
                         measured = dict(entry=entry, exit=exit, elapsed_cpu_t_cycles=elapsed,
-                                        partitioned_8mhz_clocks=converted)
+                                        elapsed_8mhz_clocks=converted)
                     else:
                         result = execute([adapter, '--pc-clock-window', rom, boot, hex(START_PC),
                                           hex(end_pc(scenario)), 'cgb-e', '20000000'])
@@ -216,7 +218,7 @@ def run_probe(runner, adapter, output):
             report['rows'].append(dict(scenario=scenario, initial_double_speed=initial, final_double_speed=final,
                 rom_sha256=sha(rom), captures=captures,
                 architectural_match=captures['gbb']['exit']['bc'] == captures['sameboy']['exit_bc'],
-                match=captures['gbb']['partitioned_8mhz_clocks'] == captures['sameboy']['elapsed_8mhz_clocks']))
+                match=captures['gbb']['elapsed_8mhz_clocks'] == captures['sameboy']['elapsed_8mhz_clocks']))
     (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     return report
 

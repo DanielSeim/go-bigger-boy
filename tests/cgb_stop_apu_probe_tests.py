@@ -127,11 +127,9 @@ class NativeContracts(unittest.TestCase):
                 self.assertEqual(row['timer_match'], a['timer'] == b['timer'])
                 self.assertEqual(row['match'], row['pcm_match'] and row['timer_match'])
                 self.assertEqual(row['different_event_indices'], [i for i in range(128) if a['events'][i] != b['events'][i]])
-                _, state, operation, _ = probe.split(row['scenario'])
-                if operation == 'nop':
-                    self.assertTrue(row['match'])
-                if state != 'active':
-                    self.assertTrue(row['pcm_match'])
+                self.assertTrue(row['match'])
+                self.assertTrue(row['pcm_match'])
+                self.assertTrue(row['timer_match'])
                 for capture in (a, b):
                     self.assertTrue(capture['repeatable'])
                     self.assertTrue(capture['authored_constraints_match'])

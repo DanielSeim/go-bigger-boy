@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- Advance the measured CGB-E speed-switch settling interval in bounded CPU
+  steps, with one resumption cycle, deferred interrupts and observable frames.
+  Save-state version 44 preserves transition progress and a normalized bus
+  clock; older states remain loadable. All 48 STOP/audio and 48 frequency
+  lifecycle controls now match the reference, with 168 conformance ROMs passing.
+  Keep short API-boundary timing offsets visible in the probes.
+
 - Measure single STOP/resume instruction windows against pinned SameBoy with
   bounded callback histories, NOP calibration and INC/LD register-effect
   controls. Record the missing switch interval and first-resume timing gap

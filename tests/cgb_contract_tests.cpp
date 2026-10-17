@@ -98,6 +98,9 @@ void test_hram_dma_return() {
                 emulator.set_cpu_registers(r);
                 static_cast<void>(emulator.step());
                 check(bus.double_speed(), "DMA return fixture enters double speed");
+                while (emulator.cpu().debug_speed_switch_cycles_remaining())
+                    static_cast<void>(emulator.step());
+                static_cast<void>(emulator.step()); // Resume through FF92 NOP.
             }
             bus.write8(0xFF46, 0xC0);
             bus.tick(8); // Existing startup delay, expressed in CPU T-cycles.
@@ -152,6 +155,8 @@ void test_cgb_memory_and_rendering() {
           "CGB STOP performs an armed double-speed switch");
     check(!speed.bus().debug_apu_cycle_phase(),
           "CGB speed switch starts the APU at its retained 1 MHz phase");
+    while (speed.cpu().debug_speed_switch_cycles_remaining())
+        static_cast<void>(speed.step());
     speed.bus().tick(1);
     check(speed.bus().debug_apu_cycle_phase(),
           "CGB double-speed advances the APU phase after one half-cycle");

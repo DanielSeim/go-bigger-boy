@@ -42,7 +42,7 @@ class Contracts(unittest.TestCase):
 
     @staticmethod
     def gbb_result():
-        hit = 'CPU_FIRST_PC cycle=100 duration=4 pc=0600 opcode=c3 next_pc=1000 bc=1000 transition=instruction\n'
+        hit = 'CPU_FIRST_PC cycle=100 normalized_8mhz=200 duration=4 pc=0600 opcode=c3 next_pc=1000 bc=1000 transition=instruction\n'
         stack = 'CPU_STACK_DIAGNOSTICS cycle=96 pc=0600 next_pc=1000 double_speed=false\n'
         return subprocess.CompletedProcess([], 0, 'PASS (Mooneye)\n', hit + stack)
 
@@ -50,6 +50,7 @@ class Contracts(unittest.TestCase):
         result = self.gbb_result()
         actual = probe.first_pc(result, probe.START_PC)
         self.assertEqual(actual['cpu_t_cycles'], 100)
+        self.assertEqual(actual['normalized_8mhz_clocks'], 200)
         self.assertEqual(actual['bc'], 0x1000)
         self.assertFalse(actual['double_speed'])
         for changed in (subprocess.CompletedProcess([], 1, result.stdout, result.stderr),
