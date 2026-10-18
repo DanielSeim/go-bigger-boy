@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.36.2] - 2026-10-18
+
 - Advance the measured CGB-E speed-switch settling interval in bounded CPU
   steps, with one resumption cycle, deferred interrupts and observable frames.
   Save-state version 44 preserves transition progress and a normalized bus
