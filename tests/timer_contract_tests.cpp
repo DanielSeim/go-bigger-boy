@@ -7,6 +7,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -125,11 +126,13 @@ void test_normal_timer_interrupt_vector_boundary() {
     // The timer_if fixture reaches the normal timer vector with the timer
     // input high and its falling edge exactly in the final four cycles of
     // interrupt entry. Those CPU-visible cycles must still advance the other
-    // peripherals. Preserve the DMG fixture boundary, while CGB must clock
-    // the falling edge and begin its normal four-cycle overflow reload delay.
-    for (const auto model : gameboy::concrete_hardware_models) {
-        gameboy::MemoryBus bus{
-            gameboy::Cartridge{test_rom({0xFB, 0x00})}};
+    // peripherals. Monochrome and CGB compatibility mode preserve that
+    // boundary; the native-CGB path clocks the falling edge and overflow delay.
+    for (const auto model : gameboy::concrete_hardware_models) for (const bool native : {false, true}) {
+        if (native && !gameboy::is_cgb_hardware(model)) continue;
+        auto image = test_rom({0xFB, 0x00});
+        image[0x143] = native ? 0x80 : 0;
+        gameboy::MemoryBus bus{gameboy::Cartridge{std::move(image)}};
         bus.initialize_post_boot(model);
         gameboy::Cpu cpu;
         cpu.reset(model);
@@ -149,7 +152,7 @@ void test_normal_timer_interrupt_vector_boundary() {
 
         check(cpu.step(bus) == 20 && cpu.registers().pc == 0x0050,
               "normal timer interrupt dispatch keeps its twenty-cycle contract");
-        const bool cgb = gameboy::is_cgb_hardware(model);
+        const bool cgb = bus.cgb_mode();
         check(bus.read8(0xFF05) == (cgb ? 0 : 0xFF) &&
                   (bus.read8(0xFF0F) & 0x04) == 0,
               "timer vector boundary preserves DMG behavior and clocks CGB overflow");

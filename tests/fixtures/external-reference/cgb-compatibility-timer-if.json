@@ -1,0 +1,66 @@
+{
+  "schema": "gbb-cgb-compatibility-timer-interrupt-evidence-v1",
+  "qualification": false,
+  "date": "2026-10-18",
+  "test_bundle": "c-sp/game-boy-test-roms v7.0",
+  "test_bundle_sha256": "b9a9d7a1075aa35a3d07c07c34974048672d8520dca9e07a50178f5860c3832c",
+  "test": "mooneye-test-suite-wilbertpol/acceptance/timer/timer_if.gb",
+  "original_rom_sha256": "c191f740f1ce8c3bc2909df7565e6f87024e045de5b5affc3275b9ff4929edc5",
+  "reference_rom_sha256": "db69985c672e2ea3594743d64ff66999e000dfc6a4727f6135dfa4e5c716724d",
+  "reference_instrumentation": "Only the result sentinel at 0x485D changes from ED to LD B,B (40); timing code and original monochrome header remain unchanged.",
+  "sameboy_commit": "208ba4afabffab9edde416f2dbb8ae459e34adb8",
+  "sameboy_library_sha256": "1ba66d2d813d99267b1be27cbc4642d624bbb8c7370e881546b1223bec3cf9fb",
+  "gbb_runner_sha256": "7456fe19c01a75f74546ca553bd9a2a4d0e9b3174231351b84021635f5c2d881",
+  "reference_adapter_sha256": "9ccdfc92dc8cd9fd2710c777d68cf6f634914333ca95872f9002cdab32c5f340",
+  "rows": [
+    {
+      "model": "cgb0",
+      "gbb_exit": 0,
+      "gbb_result": "PASS (Mooneye)",
+      "sameboy": {
+        "schema": "gbb-sameboy-mooneye-v1",
+        "model": "cgb0",
+        "result": "pass",
+        "clocks_8mhz": 10078736,
+        "pc": 18526,
+        "bc": 773,
+        "de": 2061,
+        "hl": 5410
+      }
+    },
+    {
+      "model": "cgb-c",
+      "gbb_exit": 0,
+      "gbb_result": "PASS (Mooneye)",
+      "sameboy": {
+        "schema": "gbb-sameboy-mooneye-v1",
+        "model": "cgb-c",
+        "result": "pass",
+        "clocks_8mhz": 10079904,
+        "pc": 18526,
+        "bc": 773,
+        "de": 2061,
+        "hl": 5410
+      }
+    },
+    {
+      "model": "cgb-e",
+      "gbb_exit": 0,
+      "gbb_result": "PASS (Mooneye)",
+      "sameboy": {
+        "schema": "gbb-sameboy-mooneye-v1",
+        "model": "cgb-e",
+        "result": "pass",
+        "clocks_8mhz": 10079904,
+        "pc": 18526,
+        "bc": 773,
+        "de": 2061,
+        "hl": 5410
+      }
+    }
+  ],
+  "limits": [
+    "Public test source reports CGB hardware verification for this monochrome ROM; this is reference parity, not new hardware qualification.",
+    "Native-CGB software-request timing is retained. A header-modified native-CGB variant still differs from the reference and needs separate overflow-edge investigation."
+  ]
+}

@@ -216,7 +216,15 @@ mismatch is measured.
 The Wilbert `acceptance/timer/timer_if.gb` fixture now passes across the exposed
 post-boot profiles. Its normal timer-interrupt vector boundary is covered by the
 same 20-cycle CPU dispatch contract and by the complete timer unit suite; the
-matrix no longer carries a known-failure exception for this fixture.
+matrix no longer carries a known-failure exception for this fixture. In
+monochrome compatibility mode on CGB hardware, the timer is held for one
+internal dispatch cycle, while the existing native-CGB software-request path
+retains all twenty timer clocks.
+Both modes have explicit software-request contracts; the compatibility fixture
+agrees with the pinned SameBoy reference on CGB0, CGB-C and CGB-E, recorded in
+`tests/fixtures/external-reference/cgb-compatibility-timer-if.json`. A
+header-modified native-CGB variant still differs from the reference and needs
+separate overflow-edge investigation; this correction does not change that path.
 
 The same expectations file records the per-ROM `Verified results` scopes from
 the pinned Wilbert source for the reviewed GPU timing fixtures. A fixture marked

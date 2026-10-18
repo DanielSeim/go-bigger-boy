@@ -2,7 +2,13 @@
 
 ## [Unreleased]
 
-## [0.36.2] - 2026-10-18
+## [0.36.3] - 2026-10-18
+
+- Restore monochrome compatibility-mode timer interrupt timing on CGB
+  hardware while retaining native CGB timing; cover both modes explicitly.
+
+- Make the SGB browser startup smoke test independent of undefined power-on
+  WRAM in instant mode, while retaining the bundled header-packet witness.
 
 - Advance the measured CGB-E speed-switch settling interval in bounded CPU
   steps, with one resumption cycle, deferred interrupts and observable frames.

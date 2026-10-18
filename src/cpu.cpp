@@ -653,7 +653,8 @@ unsigned Cpu::service_interrupt(MemoryBus& bus,
     // A normal DMG timer dispatch has one internal vector-entry cycle during
     // which the CPU-visible interrupt timing advances but the timer input
     // does not.  This is the boundary exercised by Wilbert's 45/46-NOP
-    // timer_if fixture. CGB clocks the timer throughout all twenty entry cycles.
+    // timer_if fixture, including monochrome compatibility mode on CGB hardware.
+    // Native CGB mode clocks the timer throughout all twenty entry cycles.
     // HALT dispatch and every other interrupt source keep
     // the ordinary peripheral timing path.
     // Keep the STAT reset effective through vector entry and its first
@@ -662,7 +663,7 @@ unsigned Cpu::service_interrupt(MemoryBus& bus,
     // can retrigger. Do not shift LY/coincidence or IF read timing, or
     // change the DMG timer path when multiple sources are pending together.
     stat_acknowledgment_ = late_stat_ack;
-    if (bus.cgb_hardware_ || from_halt || (dispatched & 0x04U) == 0) {
+    if (bus.cgb_mode_ || from_halt || (dispatched & 0x04U) == 0) {
         idle(bus, 4);
     } else {
         idle_without_timer(bus, 4);

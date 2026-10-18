@@ -321,7 +321,10 @@ test('SGB profiles run their bundled header bootstrap without a DMG intro', asyn
       const rom = new Uint8Array(0x8000);
       rom.set([0xc3, 0x50, 0x01], 0x100);
       // Publish boot ID in SCY, and the first header-packet ID in SCX.
-      rom.set([0x47, 0xfa, 0x00, 0xc0, 0xe0, 0x43, 0x78, 0xe0, 0x42, 0x18, 0xfe], 0x150);
+      // Instant startup has no header packet; publish zero explicitly rather
+      // than assuming undefined power-on WRAM at C000 was cleared.
+      const packetWitness = mode === 'instant' ? [0xaf] : [0xfa, 0x00, 0xc0];
+      rom.set([0x47, ...packetWitness, 0xe0, 0x43, 0x78, 0xe0, 0x42, 0x18, 0xfe], 0x150);
       rom[0x146] = 3;
       rom[0x14d] = 0x42; // Deliberately invalid: SGB GB-side boot performs no checks.
       const name = `gbb-${profile}-${mode}.gb`;

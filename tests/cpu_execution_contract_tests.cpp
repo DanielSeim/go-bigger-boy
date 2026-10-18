@@ -43,11 +43,12 @@ void test_cgb_timer_clock_during_interrupt_entry() {
                              gameboy::HardwareModel::cgb_c,
                              gameboy::HardwareModel::cgb_e,
                              gameboy::HardwareModel::agb}) {
-        for (const bool double_speed : {false, true}) for (const auto request : {4, 6}) {
+        for (const bool native : {false, true}) for (const bool double_speed : {false, true}) for (const auto request : {4, 6}) {
+            if (double_speed && !native) continue;
             auto image = test_rom(double_speed
                 ? std::vector<std::uint8_t>{0x10, 0x00, 0x00, 0xFB, 0x00}
                 : std::vector<std::uint8_t>{0xFB, 0x00});
-            image[0x143] = 0x80; // KEY1 is unavailable in CGB compatibility mode.
+            image[0x143] = native ? 0x80 : 0; // KEY1 is unavailable in compatibility mode.
             gameboy::MemoryBus bus{gameboy::Cartridge{std::move(image)}};
             bus.initialize_post_boot(model);
             gameboy::Cpu cpu;
@@ -73,8 +74,8 @@ void test_cgb_timer_clock_during_interrupt_entry() {
                   "CGB software request enters the highest-priority vector in twenty cycles");
             check((bus.read8(0xFF0F) & 6) == (request == 4 ? 0 : 4),
                   "CGB entry acknowledges only the serviced source when timer is pending");
-            check(bus.read8(0xFF05) == 2,
-                  "CGB timer advances through all twenty interrupt-entry CPU cycles");
+            check(bus.read8(0xFF05) == (native ? 2 : 1),
+                  "native CGB clocks twenty entry cycles; compatibility mode holds one timer cycle");
         }
     }
 }
