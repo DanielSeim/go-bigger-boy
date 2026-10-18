@@ -251,7 +251,7 @@ jobs:
           -DGAMEBOY_ENABLE_SANITIZERS=ON
 
       - name: Build sanitizer contracts
-        run: cmake --build build-sanitize --parallel
+        run: cmake --build build-sanitize --parallel 2
 
       - name: Run sanitizer contracts
         env:
@@ -314,7 +314,7 @@ jobs:
           -DGAMEBOY_ENABLE_THREAD_SANITIZER=ON
 
       - name: Build ThreadSanitizer contracts
-        run: cmake --build build-tsan --parallel
+        run: cmake --build build-tsan --parallel 2
 
       - name: Run ThreadSanitizer contracts
         env:

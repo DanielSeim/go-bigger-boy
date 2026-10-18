@@ -159,7 +159,13 @@ void test_control_write_observer() {
                 (void)bus.cartridge().debug_mmm01(snapshot);
                 (void)bus.debug_cpu_read8(0x100);
             },&capture);
-        for (unsigned i=0;i<50;++i) { (void)plain.step(); (void)observed.step(); }
+        for (unsigned i=0;i<50;++i) {
+            (void)plain.step(); (void)observed.step();
+            // STOP settling is observable CPU idle time, not the next write.
+            while (plain.cpu().debug_speed_switch_cycles_remaining()) {
+                (void)plain.step(); (void)observed.step();
+            }
+        }
         check(plain.save_state()==observed.save_state(),"Control write observer preserves exact state at either CPU speed");
         check(capture.count==6 && capture.events[0].address==0x2000 && capture.events[2].address==0x2001 &&
               capture.events[4].address==0xFF40,"Observer reports both writes of LD [a16],SP and LCDC");
@@ -410,6 +416,7 @@ void test_persistence_and_legacy_states() {
     for(unsigned type : {1U,5U,0x10U,0x1BU}) {
         gameboy::Emulator e{gameboy::Cartridge{rom(type,8,type==5 ? 0 : 3)}};
         const auto saved=e.save_state(); auto decoded=gameboy::save_state_container::decode(saved,e.rom_fingerprint());
+        decoded.payload.resize(decoded.payload.size() - 13); // v44 CPU transition and bus clock.
         check(decoded.payload.back()==0,"Legacy mapper has only a false extension marker"); decoded.payload.pop_back();
         auto legacy=gameboy::save_state_container::encode(e.rom_fingerprint(),decoded.payload); legacy[8]=42;
         e.load_state(legacy); check(e.save_state()==saved,"Version 42 states still load for MBC1/2/3/5");
@@ -419,7 +426,7 @@ void test_persistence_and_legacy_states() {
     auto old=gameboy::save_state_container::encode(e.rom_fingerprint(),decoded.payload); old[8]=42;
     try {e.load_state(old);check(false,"Old states must reject formerly unsupported controllers");}catch(const gameboy::SaveStateError&){}
     check(e.save_state()==saved,"Rejected legacy rare-mapper state rolls back atomically");
-    decoded.payload.back()=2; // Last extension field is a boolean.
+    decoded.payload[decoded.payload.size() - 14]=2; // Final mapper boolean precedes the v44 tail.
     try {e.load_state(gameboy::save_state_container::encode(e.rom_fingerprint(),decoded.payload));check(false,"Invalid mapper state must reject");}catch(const gameboy::SaveStateError&){}
     check(e.save_state()==saved,"Invalid extension rolls back atomically");
     try {gameboy::Cartridge unsupported{rom(0x20,64)};check(false,"Unknown mapper must not silently fall back");}catch(const std::invalid_argument&){}

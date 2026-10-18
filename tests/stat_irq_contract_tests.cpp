@@ -2,6 +2,7 @@
 #include "gameboy/save_state_error.hpp"
 #include "save_state_container.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <iostream>
 #include <vector>
@@ -75,8 +76,8 @@ void test_save_and_reset() {
     // Version 42 appends flags and three u64 startup-presentation fields
     // after the version-41 acknowledgment boolean. Mutate that boolean,
     // not the last byte of the presentation audio cursor.
-    constexpr std::size_t presentation_bytes = 1 + 3 * sizeof(std::uint64_t) + 1; // v43 mapper marker
-    decoded.payload[decoded.payload.size() - presentation_bytes - 1] = 2;
+    constexpr std::size_t appended_bytes = 1 + 3 * sizeof(std::uint64_t) + 1 + 13; // v43 mapper marker, v44 transition/clock
+    decoded.payload[decoded.payload.size() - appended_bytes - 1] = 2;
     const auto malformed = gameboy::save_state_container::encode(
         emulator.rom_fingerprint(), decoded.payload);
     emulator.load_state(pending);
@@ -87,14 +88,22 @@ void test_save_and_reset() {
           "malformed acknowledgment phase is rejected and rolls back atomically");
 
     decoded = gameboy::save_state_container::decode(pending, emulator.rom_fingerprint());
-    decoded.payload.resize(decoded.payload.size() - presentation_bytes);
+    decoded.payload.resize(decoded.payload.size() - appended_bytes);
     auto version41 = gameboy::save_state_container::encode(
         emulator.rom_fingerprint(), decoded.payload);
     version41[8] = 41;
     emulator.load_state(version41);
-    (void)emulator.step();
-    check(emulator.save_state() == completed,
-          "version-41 state retains its acknowledgment phase without presentation fields");
+    const auto legacy_step_cycles = emulator.step();
+    auto restored_legacy = gameboy::save_state_container::decode(
+        emulator.save_state(), emulator.rom_fingerprint()).payload;
+    auto expected_legacy = gameboy::save_state_container::decode(
+        completed, emulator.rom_fingerprint()).payload;
+    // Version 41 has no normalized-clock epoch. Compare hardware continuation
+    // while allowing the version-44 diagnostic clock to restart at load.
+    std::fill(restored_legacy.end() - 8, restored_legacy.end(), 0);
+    std::fill(expected_legacy.end() - 8, expected_legacy.end(), 0);
+    check(restored_legacy == expected_legacy && emulator.bus().debug_normalized_clocks() == 2 * legacy_step_cycles,
+          "version-41 state retains acknowledgment and restarts its diagnostic clock epoch");
 
     decoded.payload.pop_back(); // Version 40 predates the acknowledgment boolean too.
     auto legacy = gameboy::save_state_container::encode(

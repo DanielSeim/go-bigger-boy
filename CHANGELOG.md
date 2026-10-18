@@ -2,7 +2,11 @@
 
 ## [Unreleased]
 
-## [0.36.3] - 2026-10-18
+## [0.36.4] - 2026-10-18
+
+- Update legacy save-state and STOP-observer test fixtures for version 44,
+  and run the SGB reset/DMA fixture from HRAM rather than a DMA-blocked bus.
+  Bound sanitizer compilation to two workers to avoid excessive memory use.
 
 - Restore monochrome compatibility-mode timer interrupt timing on CGB
   hardware while retaining native CGB timing; cover both modes explicitly.
