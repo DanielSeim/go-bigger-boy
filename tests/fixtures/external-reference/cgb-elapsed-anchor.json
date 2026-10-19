@@ -1,0 +1,1779 @@
+{
+  "schema": "gbb-cgb-elapsed-anchor-probe-v1",
+  "qualification": false,
+  "boot_sha256": "c8937124cd7dcafc036dcad3ad46008ea57b4e76abfa3da6012ff8bdbd7687d0",
+  "rows": [
+    {
+      "scenario": "normal-delay-0",
+      "target_8mhz": 900000,
+      "rom_sha256": "10685e2ecf366ee43621b308cb93598854526087954697bf9f038315fa172345",
+      "captures": {
+        "gbb": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "target_8mhz": 900000,
+            "clocks_8mhz": 900000,
+            "completed_frames": 1,
+            "pc": 390,
+            "ly": 113,
+            "dot": 336,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "0b4353cb6ecd7bb7a7ee6fb85eae0a4e9da9990144c52121ddc95e1889210046",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        },
+        "sameboy": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-sameboy-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "ppu_synchronized": true,
+            "pixels_flushed": 0,
+            "target_8mhz": 900000,
+            "clocks_8mhz": 900000,
+            "completed_frames": 1,
+            "artificial_callbacks": 5,
+            "pc": 390,
+            "ly": 113,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "e4b153cc58724b1d1f8bd275944bae05153cf3062b9478f3b3fa749a785bea8f",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        }
+      },
+      "handoffs": {
+        "gbb": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_mode": "owned",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        },
+        "sameboy": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        }
+      },
+      "different_pixels": 4800,
+      "bounding_box": [
+        0,
+        114,
+        159,
+        143
+      ],
+      "match": false,
+      "repeatable": true
+    },
+    {
+      "scenario": "normal-delay-0",
+      "target_8mhz": 900512,
+      "rom_sha256": "10685e2ecf366ee43621b308cb93598854526087954697bf9f038315fa172345",
+      "captures": {
+        "gbb": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "target_8mhz": 900512,
+            "clocks_8mhz": 900512,
+            "completed_frames": 1,
+            "pc": 390,
+            "ly": 114,
+            "dot": 136,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "d2d683e33fa0078c4424bbc9191b985e09f34f5680be6cbd1d4965e0ddc2868e",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        },
+        "sameboy": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-sameboy-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "ppu_synchronized": true,
+            "pixels_flushed": 47,
+            "target_8mhz": 900512,
+            "clocks_8mhz": 900512,
+            "completed_frames": 1,
+            "artificial_callbacks": 5,
+            "pc": 390,
+            "ly": 114,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "2a7336ac34c05702e2b59d6e9b879c7a1096a62a4c9af3b3ef6cfd0d2d6eac7e",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        }
+      },
+      "handoffs": {
+        "gbb": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_mode": "owned",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        },
+        "sameboy": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        }
+      },
+      "different_pixels": 4755,
+      "bounding_box": [
+        0,
+        114,
+        159,
+        143
+      ],
+      "match": false,
+      "repeatable": true
+    },
+    {
+      "scenario": "normal-delay-0",
+      "target_8mhz": 1200000,
+      "rom_sha256": "10685e2ecf366ee43621b308cb93598854526087954697bf9f038315fa172345",
+      "captures": {
+        "gbb": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "target_8mhz": 1200000,
+            "clocks_8mhz": 1200000,
+            "completed_frames": 3,
+            "pc": 390,
+            "ly": 134,
+            "dot": 312,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "24341a89b9d1471471e3614131c1535df7329ca8f63a7b588b4bcbabb6f3a150",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        },
+        "sameboy": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-sameboy-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "ppu_synchronized": true,
+            "pixels_flushed": 0,
+            "target_8mhz": 1200000,
+            "clocks_8mhz": 1200000,
+            "completed_frames": 3,
+            "artificial_callbacks": 5,
+            "pc": 390,
+            "ly": 134,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "24341a89b9d1471471e3614131c1535df7329ca8f63a7b588b4bcbabb6f3a150",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        }
+      },
+      "handoffs": {
+        "gbb": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_mode": "owned",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        },
+        "sameboy": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        }
+      },
+      "different_pixels": 0,
+      "bounding_box": null,
+      "match": true,
+      "repeatable": true
+    },
+    {
+      "scenario": "normal-delay-0",
+      "target_8mhz": 1600000,
+      "rom_sha256": "10685e2ecf366ee43621b308cb93598854526087954697bf9f038315fa172345",
+      "captures": {
+        "gbb": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "target_8mhz": 1600000,
+            "clocks_8mhz": 1600000,
+            "completed_frames": 6,
+            "pc": 390,
+            "ly": 111,
+            "dot": 128,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "2b473477d9793905d09987189a00f42e869795e800c742d2e5cfcce9ca06baed",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        },
+        "sameboy": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-sameboy-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "ppu_synchronized": true,
+            "pixels_flushed": 39,
+            "target_8mhz": 1600000,
+            "clocks_8mhz": 1600000,
+            "completed_frames": 6,
+            "artificial_callbacks": 5,
+            "pc": 390,
+            "ly": 111,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "38a6505a60a62d0696ff29dca409f3f2d67dc98be17041e8c0273ed13919700a",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        }
+      },
+      "handoffs": {
+        "gbb": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_mode": "owned",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        },
+        "sameboy": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        }
+      },
+      "different_pixels": 2,
+      "bounding_box": [
+        37,
+        111,
+        38,
+        111
+      ],
+      "match": false,
+      "repeatable": true
+    },
+    {
+      "scenario": "normal-delay-0",
+      "target_8mhz": 2000000,
+      "rom_sha256": "10685e2ecf366ee43621b308cb93598854526087954697bf9f038315fa172345",
+      "captures": {
+        "gbb": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "target_8mhz": 2000000,
+            "clocks_8mhz": 2000000,
+            "completed_frames": 9,
+            "pc": 390,
+            "ly": 87,
+            "dot": 400,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "83241dc86b4b92c901cc1dfc6c963a950d6a1c4f19c3e9ea15a8a05ea2eaac56",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        },
+        "sameboy": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-sameboy-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "ppu_synchronized": true,
+            "pixels_flushed": 0,
+            "target_8mhz": 2000000,
+            "clocks_8mhz": 2000000,
+            "completed_frames": 9,
+            "artificial_callbacks": 5,
+            "pc": 390,
+            "ly": 87,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "83241dc86b4b92c901cc1dfc6c963a950d6a1c4f19c3e9ea15a8a05ea2eaac56",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        }
+      },
+      "handoffs": {
+        "gbb": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_mode": "owned",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        },
+        "sameboy": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        }
+      },
+      "different_pixels": 0,
+      "bounding_box": null,
+      "match": true,
+      "repeatable": true
+    },
+    {
+      "scenario": "normal-delay-4096",
+      "target_8mhz": 900000,
+      "rom_sha256": "adca4929e1baba34a63c0092f4a578d18882fa78221ffd029e45d976f21bf694",
+      "captures": {
+        "gbb": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "target_8mhz": 900000,
+            "clocks_8mhz": 900000,
+            "completed_frames": 0,
+            "pc": 398,
+            "ly": 16,
+            "dot": 96,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "a13d3e0b0ac306628d5a1453fe54381e91ca71d1197fd7f05372f4308a160aed",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        },
+        "sameboy": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-sameboy-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "ppu_synchronized": true,
+            "pixels_flushed": 7,
+            "target_8mhz": 900000,
+            "clocks_8mhz": 900000,
+            "completed_frames": 0,
+            "artificial_callbacks": 7,
+            "pc": 398,
+            "ly": 16,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "6a7789ee80687ce47208dde3c284b2514b030231e550f2f1467d6efbe75df74c",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        }
+      },
+      "handoffs": {
+        "gbb": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_mode": "owned",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        },
+        "sameboy": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        }
+      },
+      "different_pixels": 2,
+      "bounding_box": [
+        5,
+        16,
+        6,
+        16
+      ],
+      "match": false,
+      "repeatable": true
+    },
+    {
+      "scenario": "normal-delay-4096",
+      "target_8mhz": 900512,
+      "rom_sha256": "adca4929e1baba34a63c0092f4a578d18882fa78221ffd029e45d976f21bf694",
+      "captures": {
+        "gbb": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "target_8mhz": 900512,
+            "clocks_8mhz": 900512,
+            "completed_frames": 0,
+            "pc": 398,
+            "ly": 16,
+            "dot": 352,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "2fabf6b2c9d6b6883f3653117bcb4da250de9064a5b8c80fd4413f0a4b54a4c2",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        },
+        "sameboy": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-sameboy-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "ppu_synchronized": true,
+            "pixels_flushed": 0,
+            "target_8mhz": 900512,
+            "clocks_8mhz": 900512,
+            "completed_frames": 0,
+            "artificial_callbacks": 7,
+            "pc": 398,
+            "ly": 16,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "2fabf6b2c9d6b6883f3653117bcb4da250de9064a5b8c80fd4413f0a4b54a4c2",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        }
+      },
+      "handoffs": {
+        "gbb": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_mode": "owned",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        },
+        "sameboy": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        }
+      },
+      "different_pixels": 0,
+      "bounding_box": null,
+      "match": true,
+      "repeatable": true
+    },
+    {
+      "scenario": "normal-delay-4096",
+      "target_8mhz": 1200000,
+      "rom_sha256": "adca4929e1baba34a63c0092f4a578d18882fa78221ffd029e45d976f21bf694",
+      "captures": {
+        "gbb": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "target_8mhz": 1200000,
+            "clocks_8mhz": 1200000,
+            "completed_frames": 2,
+            "pc": 398,
+            "ly": 37,
+            "dot": 72,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "96f1cab98b738722ad3f164bd9e1056ade7d0096d79c1c56f082172e7db9372b",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        },
+        "sameboy": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-sameboy-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "ppu_synchronized": true,
+            "pixels_flushed": 0,
+            "target_8mhz": 1200000,
+            "clocks_8mhz": 1200000,
+            "completed_frames": 2,
+            "artificial_callbacks": 7,
+            "pc": 398,
+            "ly": 37,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "96f1cab98b738722ad3f164bd9e1056ade7d0096d79c1c56f082172e7db9372b",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        }
+      },
+      "handoffs": {
+        "gbb": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_mode": "owned",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        },
+        "sameboy": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        }
+      },
+      "different_pixels": 0,
+      "bounding_box": null,
+      "match": true,
+      "repeatable": true
+    },
+    {
+      "scenario": "normal-delay-4096",
+      "target_8mhz": 1600000,
+      "rom_sha256": "adca4929e1baba34a63c0092f4a578d18882fa78221ffd029e45d976f21bf694",
+      "captures": {
+        "gbb": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "target_8mhz": 1600000,
+            "clocks_8mhz": 1600000,
+            "completed_frames": 5,
+            "pc": 398,
+            "ly": 13,
+            "dot": 344,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "10ccddcb4872912cf728a092210b18d4a318f61d72da14fb1a0ed6a758e45a05",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        },
+        "sameboy": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-sameboy-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "ppu_synchronized": true,
+            "pixels_flushed": 0,
+            "target_8mhz": 1600000,
+            "clocks_8mhz": 1600000,
+            "completed_frames": 5,
+            "artificial_callbacks": 7,
+            "pc": 398,
+            "ly": 13,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "10ccddcb4872912cf728a092210b18d4a318f61d72da14fb1a0ed6a758e45a05",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        }
+      },
+      "handoffs": {
+        "gbb": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_mode": "owned",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        },
+        "sameboy": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        }
+      },
+      "different_pixels": 0,
+      "bounding_box": null,
+      "match": true,
+      "repeatable": true
+    },
+    {
+      "scenario": "normal-delay-4096",
+      "target_8mhz": 2000000,
+      "rom_sha256": "adca4929e1baba34a63c0092f4a578d18882fa78221ffd029e45d976f21bf694",
+      "captures": {
+        "gbb": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "target_8mhz": 2000000,
+            "clocks_8mhz": 2000016,
+            "completed_frames": 8,
+            "pc": 85,
+            "ly": 144,
+            "dot": 168,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "cca59820314ef8b2c7b44cabcfe5f17762850fd5aec754a62e98a0697542d13f",
+            "unique_colors": 1,
+            "solid_rgb": [
+              66,
+              0,
+              0
+            ]
+          }
+        },
+        "sameboy": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-sameboy-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "ppu_synchronized": true,
+            "pixels_flushed": 0,
+            "target_8mhz": 2000000,
+            "clocks_8mhz": 2000000,
+            "completed_frames": 8,
+            "artificial_callbacks": 7,
+            "pc": 84,
+            "ly": 144,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "cca59820314ef8b2c7b44cabcfe5f17762850fd5aec754a62e98a0697542d13f",
+            "unique_colors": 1,
+            "solid_rgb": [
+              66,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "handoffs": {
+        "gbb": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_mode": "owned",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        },
+        "sameboy": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        }
+      },
+      "different_pixels": 0,
+      "bounding_box": null,
+      "match": true,
+      "repeatable": true
+    },
+    {
+      "scenario": "double-delay-0",
+      "target_8mhz": 900000,
+      "rom_sha256": "056b94662208e367859e5b290fce5baf58a91a1edd85622adddad2d25aae4f76",
+      "captures": {
+        "gbb": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "target_8mhz": 900000,
+            "clocks_8mhz": 900000,
+            "completed_frames": 0,
+            "pc": 396,
+            "ly": 124,
+            "dot": 54,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "b7b567d6571e93c29eabb81fcf62414965036d4fd93f1d6591f1b05994ca1f34",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        },
+        "sameboy": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-sameboy-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "ppu_synchronized": true,
+            "pixels_flushed": 0,
+            "target_8mhz": 900000,
+            "clocks_8mhz": 900000,
+            "completed_frames": 0,
+            "artificial_callbacks": 6,
+            "pc": 396,
+            "ly": 124,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "b7b567d6571e93c29eabb81fcf62414965036d4fd93f1d6591f1b05994ca1f34",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        }
+      },
+      "handoffs": {
+        "gbb": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_mode": "owned",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        },
+        "sameboy": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        }
+      },
+      "different_pixels": 0,
+      "bounding_box": null,
+      "match": true,
+      "repeatable": true
+    },
+    {
+      "scenario": "double-delay-0",
+      "target_8mhz": 900512,
+      "rom_sha256": "056b94662208e367859e5b290fce5baf58a91a1edd85622adddad2d25aae4f76",
+      "captures": {
+        "gbb": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "target_8mhz": 900512,
+            "clocks_8mhz": 900512,
+            "completed_frames": 0,
+            "pc": 396,
+            "ly": 124,
+            "dot": 310,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "82d960275c2f46c95ffc7a9fd40ba43717682858c4b4a4b5b47319d05ea1ee3b",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        },
+        "sameboy": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-sameboy-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "ppu_synchronized": true,
+            "pixels_flushed": 0,
+            "target_8mhz": 900512,
+            "clocks_8mhz": 900512,
+            "completed_frames": 0,
+            "artificial_callbacks": 6,
+            "pc": 396,
+            "ly": 124,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "82d960275c2f46c95ffc7a9fd40ba43717682858c4b4a4b5b47319d05ea1ee3b",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        }
+      },
+      "handoffs": {
+        "gbb": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_mode": "owned",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        },
+        "sameboy": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        }
+      },
+      "different_pixels": 0,
+      "bounding_box": null,
+      "match": true,
+      "repeatable": true
+    },
+    {
+      "scenario": "double-delay-0",
+      "target_8mhz": 1200000,
+      "rom_sha256": "056b94662208e367859e5b290fce5baf58a91a1edd85622adddad2d25aae4f76",
+      "captures": {
+        "gbb": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "target_8mhz": 1200000,
+            "clocks_8mhz": 1200000,
+            "completed_frames": 3,
+            "pc": 396,
+            "ly": 145,
+            "dot": 30,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "623e7fad4942db553b0191e544de29a9cfc6daf8771945f8d7977a6522712370",
+            "unique_colors": 1,
+            "solid_rgb": [
+              24,
+              0,
+              0
+            ]
+          }
+        },
+        "sameboy": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-sameboy-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "ppu_synchronized": true,
+            "pixels_flushed": 0,
+            "target_8mhz": 1200000,
+            "clocks_8mhz": 1200000,
+            "completed_frames": 3,
+            "artificial_callbacks": 6,
+            "pc": 396,
+            "ly": 145,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "623e7fad4942db553b0191e544de29a9cfc6daf8771945f8d7977a6522712370",
+            "unique_colors": 1,
+            "solid_rgb": [
+              24,
+              0,
+              0
+            ]
+          }
+        }
+      },
+      "handoffs": {
+        "gbb": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_mode": "owned",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        },
+        "sameboy": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        }
+      },
+      "different_pixels": 0,
+      "bounding_box": null,
+      "match": true,
+      "repeatable": true
+    },
+    {
+      "scenario": "double-delay-0",
+      "target_8mhz": 1600000,
+      "rom_sha256": "056b94662208e367859e5b290fce5baf58a91a1edd85622adddad2d25aae4f76",
+      "captures": {
+        "gbb": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "target_8mhz": 1600000,
+            "clocks_8mhz": 1600000,
+            "completed_frames": 5,
+            "pc": 396,
+            "ly": 121,
+            "dot": 302,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "b090492ee7d1affe7d5ae6bf0f8ff20db118f32e5e8668fd3e4638f4f3d35af8",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        },
+        "sameboy": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-sameboy-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "ppu_synchronized": true,
+            "pixels_flushed": 0,
+            "target_8mhz": 1600000,
+            "clocks_8mhz": 1600000,
+            "completed_frames": 5,
+            "artificial_callbacks": 6,
+            "pc": 396,
+            "ly": 121,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "b090492ee7d1affe7d5ae6bf0f8ff20db118f32e5e8668fd3e4638f4f3d35af8",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        }
+      },
+      "handoffs": {
+        "gbb": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_mode": "owned",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        },
+        "sameboy": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        }
+      },
+      "different_pixels": 0,
+      "bounding_box": null,
+      "match": true,
+      "repeatable": true
+    },
+    {
+      "scenario": "double-delay-0",
+      "target_8mhz": 2000000,
+      "rom_sha256": "056b94662208e367859e5b290fce5baf58a91a1edd85622adddad2d25aae4f76",
+      "captures": {
+        "gbb": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "target_8mhz": 2000000,
+            "clocks_8mhz": 2000000,
+            "completed_frames": 8,
+            "pc": 396,
+            "ly": 98,
+            "dot": 118,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "4e0f8a7cfcd9f5306266f7a74707dfa3ab3c389886760acd9c20d79af8d7b071",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        },
+        "sameboy": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-sameboy-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "ppu_synchronized": true,
+            "pixels_flushed": 29,
+            "target_8mhz": 2000000,
+            "clocks_8mhz": 2000000,
+            "completed_frames": 8,
+            "artificial_callbacks": 6,
+            "pc": 396,
+            "ly": 98,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "b7bb72ffc457ce79f4eaebb5f544ac1c0b790805a061bfa112f96e9c83ab73f5",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        }
+      },
+      "handoffs": {
+        "gbb": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_mode": "owned",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        },
+        "sameboy": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        }
+      },
+      "different_pixels": 2,
+      "bounding_box": [
+        27,
+        98,
+        28,
+        98
+      ],
+      "match": false,
+      "repeatable": true
+    },
+    {
+      "scenario": "double-delay-4096",
+      "target_8mhz": 900000,
+      "rom_sha256": "4a1fa887805b5aae69d97e36fbaaaf0eab24fdd94b2fc32806ec785dfa598701",
+      "captures": {
+        "gbb": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "target_8mhz": 900000,
+            "clocks_8mhz": 900000,
+            "completed_frames": 0,
+            "pc": 372,
+            "ly": 0,
+            "dot": 0,
+            "lcdc": 0
+          },
+          "image": {
+            "rgb_sha256": "847f0ab88419bfae5e28ae56d3406b1a9b749eb77e198dede3fb20b8decc0d81",
+            "unique_colors": 1,
+            "solid_rgb": [
+              255,
+              255,
+              255
+            ]
+          }
+        },
+        "sameboy": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-sameboy-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "ppu_synchronized": true,
+            "pixels_flushed": 0,
+            "target_8mhz": 900000,
+            "clocks_8mhz": 900000,
+            "completed_frames": 0,
+            "artificial_callbacks": 6,
+            "pc": 372,
+            "ly": 0,
+            "lcdc": 0
+          },
+          "image": {
+            "rgb_sha256": "847f0ab88419bfae5e28ae56d3406b1a9b749eb77e198dede3fb20b8decc0d81",
+            "unique_colors": 1,
+            "solid_rgb": [
+              255,
+              255,
+              255
+            ]
+          }
+        }
+      },
+      "handoffs": {
+        "gbb": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_mode": "owned",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        },
+        "sameboy": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        }
+      },
+      "different_pixels": 0,
+      "bounding_box": null,
+      "match": true,
+      "repeatable": true
+    },
+    {
+      "scenario": "double-delay-4096",
+      "target_8mhz": 900512,
+      "rom_sha256": "4a1fa887805b5aae69d97e36fbaaaf0eab24fdd94b2fc32806ec785dfa598701",
+      "captures": {
+        "gbb": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "target_8mhz": 900512,
+            "clocks_8mhz": 900512,
+            "completed_frames": 0,
+            "pc": 372,
+            "ly": 0,
+            "dot": 0,
+            "lcdc": 0
+          },
+          "image": {
+            "rgb_sha256": "847f0ab88419bfae5e28ae56d3406b1a9b749eb77e198dede3fb20b8decc0d81",
+            "unique_colors": 1,
+            "solid_rgb": [
+              255,
+              255,
+              255
+            ]
+          }
+        },
+        "sameboy": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-sameboy-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "ppu_synchronized": true,
+            "pixels_flushed": 0,
+            "target_8mhz": 900512,
+            "clocks_8mhz": 900512,
+            "completed_frames": 0,
+            "artificial_callbacks": 6,
+            "pc": 372,
+            "ly": 0,
+            "lcdc": 0
+          },
+          "image": {
+            "rgb_sha256": "847f0ab88419bfae5e28ae56d3406b1a9b749eb77e198dede3fb20b8decc0d81",
+            "unique_colors": 1,
+            "solid_rgb": [
+              255,
+              255,
+              255
+            ]
+          }
+        }
+      },
+      "handoffs": {
+        "gbb": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_mode": "owned",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        },
+        "sameboy": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        }
+      },
+      "different_pixels": 0,
+      "bounding_box": null,
+      "match": true,
+      "repeatable": true
+    },
+    {
+      "scenario": "double-delay-4096",
+      "target_8mhz": 1200000,
+      "rom_sha256": "4a1fa887805b5aae69d97e36fbaaaf0eab24fdd94b2fc32806ec785dfa598701",
+      "captures": {
+        "gbb": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "target_8mhz": 1200000,
+            "clocks_8mhz": 1200000,
+            "completed_frames": 1,
+            "pc": 404,
+            "ly": 47,
+            "dot": 246,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "2678736d038740d5c46a0aa8fe97b3462bed1d051d82d7537c1ff49102ab303d",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        },
+        "sameboy": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-sameboy-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "ppu_synchronized": true,
+            "pixels_flushed": 157,
+            "target_8mhz": 1200000,
+            "clocks_8mhz": 1200000,
+            "completed_frames": 1,
+            "artificial_callbacks": 8,
+            "pc": 404,
+            "ly": 47,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "e9e6bbc316c8cf23600f5bb825c7cfe7e6c8fb6f713e2859e226e78bafe9344d",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        }
+      },
+      "handoffs": {
+        "gbb": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_mode": "owned",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        },
+        "sameboy": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        }
+      },
+      "different_pixels": 15365,
+      "bounding_box": [
+        0,
+        47,
+        159,
+        143
+      ],
+      "match": false,
+      "repeatable": true
+    },
+    {
+      "scenario": "double-delay-4096",
+      "target_8mhz": 1600000,
+      "rom_sha256": "4a1fa887805b5aae69d97e36fbaaaf0eab24fdd94b2fc32806ec785dfa598701",
+      "captures": {
+        "gbb": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "target_8mhz": 1600000,
+            "clocks_8mhz": 1600000,
+            "completed_frames": 4,
+            "pc": 404,
+            "ly": 24,
+            "dot": 62,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "77bd8aa9802e81853111a3414e37c19fe20b4a6b141548f15f8fee0f112bd57c",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        },
+        "sameboy": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-sameboy-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "ppu_synchronized": true,
+            "pixels_flushed": 0,
+            "target_8mhz": 1600000,
+            "clocks_8mhz": 1600000,
+            "completed_frames": 4,
+            "artificial_callbacks": 8,
+            "pc": 404,
+            "ly": 24,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "77bd8aa9802e81853111a3414e37c19fe20b4a6b141548f15f8fee0f112bd57c",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        }
+      },
+      "handoffs": {
+        "gbb": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_mode": "owned",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        },
+        "sameboy": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        }
+      },
+      "different_pixels": 0,
+      "bounding_box": null,
+      "match": true,
+      "repeatable": true
+    },
+    {
+      "scenario": "double-delay-4096",
+      "target_8mhz": 2000000,
+      "rom_sha256": "4a1fa887805b5aae69d97e36fbaaaf0eab24fdd94b2fc32806ec785dfa598701",
+      "captures": {
+        "gbb": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "target_8mhz": 2000000,
+            "clocks_8mhz": 2000000,
+            "completed_frames": 7,
+            "pc": 404,
+            "ly": 0,
+            "dot": 334,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "b7f3564501bc71d7afd2a9b6947a81cfa4005c5e53ca62f54df5f2c28aee7fb5",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        },
+        "sameboy": {
+          "metadata": {
+            "event": "capture",
+            "schema": "gbb-sameboy-elapsed-capture-v1",
+            "qualification": false,
+            "anchor": "elapsed_8mhz_after_boot_unmap_pc_0100",
+            "ppu_synchronized": true,
+            "pixels_flushed": 0,
+            "target_8mhz": 2000000,
+            "clocks_8mhz": 2000000,
+            "completed_frames": 7,
+            "artificial_callbacks": 8,
+            "pc": 404,
+            "ly": 0,
+            "lcdc": 145
+          },
+          "image": {
+            "rgb_sha256": "b7f3564501bc71d7afd2a9b6947a81cfa4005c5e53ca62f54df5f2c28aee7fb5",
+            "unique_colors": 2,
+            "solid_rgb": null
+          }
+        }
+      },
+      "handoffs": {
+        "gbb": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_mode": "owned",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        },
+        "sameboy": {
+          "event": "handoff",
+          "model": "cgb-e",
+          "boot_clocks_8mhz": 8923360,
+          "pc": 256,
+          "af": 4480,
+          "bc": 0,
+          "de": 65366,
+          "hl": 13,
+          "sp": 65534,
+          "div": 20,
+          "lcdc": 145,
+          "ly": 0
+        }
+      },
+      "different_pixels": 0,
+      "bounding_box": null,
+      "match": true,
+      "repeatable": true
+    }
+  ],
+  "source_sha256": {
+    "scripts/gbb_elapsed_capture.cpp": "2401b96b382fa0790ae88c6355115b597c89d61a9ce1c6e274cd9c07d578624e",
+    "scripts/cgb_elapsed_anchor_probe.py": "4c7605fa042379bc2dbc082b90e7266defc7332a13a87f82c200a82d02ba92bd",
+    "scripts/sameboy_elapsed_capture.c": "daf976f40bd54c8b0314ce405c37912c5a859dc7f0d25da38a417616a7792013",
+    "scripts/cgb_frame_anchor_probe.py": "64ebef18d72fe32b55c9dcebfb6a9279459a5584123d7b3872cd2e62c41fd39c",
+    "src/cpu.cpp": "fdf86b750e99c1e6240bd5bf1237f98819c7329b7e7c2a035bc3b3b05fa3e56e",
+    "src/emulator.cpp": "2b61b6e4dd0b7f49e9e797fa2d7dfcc84d36cb2410b69f96d2bb7feb63d74227",
+    "src/ppu.cpp": "8bf0364c48b072caa042810bb17582a98d04574da3bba3e7af4b8736e085812b"
+  },
+  "reference": {
+    "repository": "https://github.com/LIJI32/SameBoy",
+    "revision": "208ba4afabffab9edde416f2dbb8ae459e34adb8",
+    "version": "1.0.3",
+    "seed": 0,
+    "color_correction": "disabled"
+  },
+  "summary": {
+    "cases": 20,
+    "exact_pixel_matches": 14,
+    "unresolved_pixel_mismatches": 6,
+    "same_ly_and_frame_count": 20,
+    "two_pixel_boundaries": 3,
+    "first_frame_presentation_cases": 3
+  },
+  "observations": [
+    "Both cores use the same independently authored boot and ROM, without private inputs.",
+    "Three large mismatches retain first-frame presentation differences after LCD enable; the pinned reference clears its first-frame output at VBlank.",
+    "Three two-pixel differences occur at active drawing boundaries, including after multiple completed frames; their cause remains unqualified.",
+    "The CLI exits 1 for this result. No screenshot offset or baseline refresh is applied."
+  ]
+}

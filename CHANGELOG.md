@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add bounded elapsed-clock CGB capture and same-owned-boot comparisons. Record
+  first-frame presentation and two-pixel boundary differences explicitly;
+  preserve private release baselines pending independent validation.
+
 - Recognize native CGB interrupts that arrive during opcode fetch, discarding
   that opcode and retaining the total 20-clock entry. Preserve executed-only
   CPU histories, compatibility timing, and serialized state behavior.

@@ -506,6 +506,32 @@ existing output files. Original boot images are external private inputs when
 used for commercial comparisons; the calibration uses only the owned boot.
 See [accuracy](accuracy.md) for current results and release limits.
 
+The headless test build also provides `gbb_elapsed_capture`, a native CGB-E
+research adapter. It accepts `ROM owned|post TARGETS_8MHZ OUTPUT_PREFIX`, anchors
+its normalized clock at PC=0100 after boot unmap, and writes the existing raw
+framebuffer without changing presentation or PPU state. It bounds boot and
+capture execution to 200 million 8-MHz clocks each, accepts at most eight
+increasing targets, and refuses existing images. It reads cartridge bytes
+directly, so adjacent battery saves cannot affect the comparison or be written.
+An instruction may overshoot a target; actual clocks remain explicit.
+
+```sh
+cmake --build build-headless --target gameboy_elapsed_capture
+python3 scripts/cgb_elapsed_anchor_probe.py \
+  --gbb-capture build-headless/gbb_elapsed_capture \
+  --sameboy-capture /tmp/sameboy-elapsed-capture \
+  --output /path/to/new-elapsed-anchor-results
+```
+
+This paired calibration uses four authored ROMs, the same owned boot, two takes
+per core and five fixed targets, covering both CPU speeds and delayed LCD enable.
+It preserves complete metadata and image hashes in its report and exits **1**
+for any pixel mismatch. The recorded result is 14/20 exact images, with six
+explicit disagreements despite equal LY and completed-frame counts. This is
+research evidence, not a passing release gate. Public CTest checks the capture
+adapter, disabled LCD, target bounds, overwrite protection, split-capture
+equivalence and frozen evidence without requiring SameBoy or private inputs.
+
 
 `gameboy_cgb_reti_dispatch_probe_contract` adds software-requested RETI/RET/EI
 phase sweeps and an equal-cost direct-call control. These exposed and verify a

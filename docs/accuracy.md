@@ -1277,3 +1277,44 @@ remains on hold. Next isolate the remaining startup/peripheral-state and
 framebuffer differences, retaining original-boot handoff evidence and the
 synchronized capture anchor. Matching this focused IRQ scope does not qualify
 those remaining commercial snapshots or the release as a whole.
+
+The next controlled comparison uses the same independently authored boot in
+both cores for the nine remaining CGB ROMs, at the fourteen unresolved clock
+targets. Every target repeats twice in each core; PC, AF, BC, DE, HL, SP and
+visible DIV/LCDC/LY agree at handoff. This does **not** establish identical
+hidden peripheral or uninitialized memory state. Robopon's twelve-pixel
+disagreement disappears under this startup control. The other thirteen captures
+still differ, including the five-frame Conker and two-frame Bionic Commando
+drift. Thus matching those handoff registers alone does not explain the
+remaining differences. The separate SGB Donkey Kong case is excluded from this
+native CGB comparison. These private checks neither replace the original-boot
+results nor reduce the release's fifteen unqualified snapshots; its approved
+baseline remains untouched.
+
+`cgb-elapsed-anchor.json` records a public calibration using only the authored
+frame-anchor ROMs and owned boot. Five fixed elapsed-clock samples, both CPU
+speeds, optional LCD-enable delay and two takes per core produce eighty
+captures. Fourteen of twenty paired images match exactly. All twenty agree on
+LY and completed-frame count; none uses a fitted clock or frame offset.
+
+Three differences retain first-frame presentation after LCD enable. For the
+normal/no-delay case at 900,000 clocks, the bottom thirty rows differ (4,800
+pixels); at 900,512 clocks, 4,755 pixels differ. The double/delayed case at
+1,200,000 clocks differs at 15,365 pixels. Inspection of the pinned reference's
+`GB_display_vblank` shows that it clears first-frame presentation output at
+the first VBlank after enable. GBB keeps the preceding framebuffer contents.
+This reference presentation behavior must be distinguished from the deferred
+PPU synchronization defect already fixed in the adapter.
+
+The other three differences each involve two adjacent pixels at an active
+drawing boundary: normal/no-delay at 1,600,000 clocks (x=37..38, LY=111),
+normal/delayed at 900,000 clocks (x=5..6, LY=16), and double/no-delay at
+2,000,000 clocks (x=27..28, LY=98). The first and last occur after six and eight
+completed frames respectively, so initial presentation cannot explain them.
+Their cause remains unqualified. The new probe exits 1 for the recorded
+14/20 result; a successful capture or repeatable mismatch never qualifies
+parity. CPU/PPU timing and capture contents are unchanged in this investigation.
+Next isolate pixel-emission and palette-write phases with authored, steady-state
+controls, retaining first-frame presentation as a separate witness before
+revisiting the commercial mismatches. No release or baseline update is justified
+by these controls alone.
