@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Correct native CGB first-line CPU VRAM access at dot 80 in normal speed,
+  preserving the double-speed restriction, direct access arbitration and
+  save/load behavior. Validate against owned-ROM reference sweeps.
+
 - Correct native CGB CPU VRAM handoff on ordinary lines and palette-data sampling. Preserve
   instruction clocks, blocked-write palette index increments and diagnostic IO
   traces; validate access boundaries across CGB0/CGB-C/CGB-E with save/load controls.

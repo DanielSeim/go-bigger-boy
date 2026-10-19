@@ -335,7 +335,7 @@ std::uint8_t MemoryBus::cpu_read8(const std::uint16_t address) const noexcept {
     if (cgb_mode_ && (address == 0xFF69 || address == 0xFF6B)) {
         return ppu_.cpu_read_palette(address, double_speed_);
     }
-    if (address >= 0x8000 && address <= 0x9FFF) return ppu_.cpu_read_vram(address);
+    if (address >= 0x8000 && address <= 0x9FFF) return ppu_.cpu_read_vram(address, double_speed_);
     return read8(address);
 }
 
@@ -354,7 +354,7 @@ void MemoryBus::cpu_write8(const std::uint16_t address,
         return;
     }
     if (address >= 0x8000 && address <= 0x9FFF) {
-        ppu_.cpu_write_vram(address, value);
+        ppu_.cpu_write_vram(address, value, double_speed_);
         return;
     }
     const bool observed = control_write_observer_ && (address < 0x8000 || address == 0xFF40);

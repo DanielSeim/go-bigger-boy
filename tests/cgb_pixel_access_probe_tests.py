@@ -60,6 +60,29 @@ class PixelAccessContracts(unittest.TestCase):
                             accepted.add(probe.witness(observed, case)['accepted'])
                     self.assertEqual(accepted, {False, True})
 
+    def test_startup_vram_handoff_is_speed_specific_and_observer_independent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            boot, rom = root / 'boot.bin', root / 'test.gbc'
+            boot.write_bytes(probe.anchor.owned_boot())
+            for speed in (False, True):
+                for operation in ('vram-read', 'vram-write'):
+                    candidates = [c for c in probe.startup_scenarios()
+                                  if c['speed'] == speed and c['edge'] == 'start'
+                                  and c['operation'] == operation]
+                    for case in candidates:
+                        with self.subTest(case=case['name']):
+                            rom.write_bytes(probe.probe_rom(case))
+                            observed = probe.validate_trace(self.trace(rom, boot), case, 'gbb')
+                            control = probe.validate_trace(self.trace(rom, boot, False), case, 'gbb', False)
+                            self.assertEqual(probe.final_state(observed), probe.final_state(control))
+                            # LD (HL),B / LD A,(HL) completes eight CPU clocks
+                            # after the preceding 44+4*pad clocks. At normal
+                            # speed dot 80 remains accessible on the first line.
+                            dot = (32 + 4 * case['pad']) // (2 if speed else 1)
+                            expected = dot < 80 or (dot == 80 and not speed)
+                            self.assertEqual(probe.witness(observed, case)['accepted'], expected)
+
     def test_invalid_metadata_and_overlong_traces_fail_closed(self):
         evidence = json.loads((ROOT / 'tests/fixtures/external-reference/cgb-pixel-access.json').read_text())
         example = evidence['examples'][0]
@@ -184,6 +207,30 @@ class PixelAccessContracts(unittest.TestCase):
         self.assertEqual({r['case']['name'] for r in remaining},
                          {'normal-start-vram-read-startup-pad12',
                           'normal-start-vram-write-startup-pad12'})
+
+    def test_startup_correction_keeps_historical_disagreements_explicit(self):
+        evidence = json.loads((ROOT / 'tests/fixtures/external-reference/cgb-pixel-access.json').read_text())
+        correction = evidence['startup_handoff_correction']
+        cases = {c['name']: c for c in probe.startup_scenarios()}
+        rows = correction['rows']
+        self.assertEqual(len(rows), 176)
+        self.assertEqual({r['scenario'] for r in rows}, set(cases))
+        for row in rows:
+            self.assertEqual(row['rom_sha256'], hashlib.sha256(probe.probe_rom(cases[row['scenario']])).hexdigest())
+            self.assertTrue(row['architectural_match'])
+            for capture in row['captures'].values():
+                self.assertTrue(capture['repeatable'])
+                self.assertTrue(capture['snapshot_equivalent'])
+                self.assertTrue(capture['padding_equivalent'])
+                self.assertIs(type(capture['accepted']), bool)
+        controls = correction['cross_model_controls']
+        self.assertEqual(len(controls), 352)
+        self.assertEqual({(r['model'], r['scenario']) for r in controls},
+                         {(model, name) for model in ('cgb0', 'cgb-c') for name in cases})
+        self.assertTrue(all(r['match'] and r['values']['gbb'] == r['values']['sameboy'] for r in controls))
+        self.assertEqual(evidence['retained_correction']['startup_controls']['matches_after'], 174)
+        self.assertEqual(correction['base_revision'][:7], 'e08c21d')
+        self.assertFalse(evidence['qualification'])
 
 
 if __name__ == '__main__':

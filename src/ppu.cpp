@@ -227,10 +227,14 @@ void Ppu::write_vram(const std::uint16_t address,
     }
 }
 
-std::uint8_t Ppu::cpu_read_vram(const std::uint16_t address) const noexcept {
+std::uint8_t Ppu::cpu_read_vram(const std::uint16_t address,
+                                 const bool double_speed) const noexcept {
     // Native CPU access still reaches VRAM at the ordinary dot-80 handoff.
+    // On the shortened startup line this window exists only at normal speed.
     // Direct/debug accesses keep the established internal arbitration rule.
-    if (cgb_mode_ && !lcd_startup_ && dot_ == 80 && mode_ == 2 && stat_mode_ == 3) {
+    if (cgb_mode_ && dot_ == 80 && stat_mode_ == 3 &&
+        ((!lcd_startup_ && mode_ == 2) ||
+         (lcd_startup_ && !double_speed && mode_ == 3))) {
         const auto& bank = vram_bank_ != 0 ? *cgb_vram_ : vram_;
         return bank[address - 0x8000];
     }
@@ -238,15 +242,18 @@ std::uint8_t Ppu::cpu_read_vram(const std::uint16_t address) const noexcept {
 }
 
 void Ppu::cpu_write_vram(const std::uint16_t address,
-                         const std::uint8_t value) noexcept {
+                         const std::uint8_t value,
+                         const bool double_speed) noexcept {
     // A CPU write that completes on the mode-2-to-mode-3 handoff still
     // reaches VRAM on DMG-family and native CGB hardware. Direct writes follow
     // the internal mode-3 arbitration boundary used by diagnostics.
     const auto mode_transition_write = (!cgb_hardware_ || cgb_mode_) && !lcd_startup_ &&
                                        dot_ == 80 &&
                                        mode_ == 2 && stat_mode_ == 3;
+    const auto startup_write = cgb_mode_ && lcd_startup_ && !double_speed &&
+                               dot_ == 80 && mode_ == 3 && stat_mode_ == 3;
     if (!lcd_enabled() || (mode_ != 3 && stat_mode_ != 3) ||
-        mode_transition_write) {
+        mode_transition_write || startup_write) {
         auto& bank = cgb_mode_ && vram_bank_ != 0 ? *cgb_vram_ : vram_;
         bank[address - 0x8000] = value;
     }

@@ -1448,18 +1448,31 @@ the previous CPU/PPU/bus implementation fails 504 access/IO-trace assertions.
 
 An additional end-only startup sweep shifts the authored schedule by the
 shortened 452-dot first line, using `startup_scenarios()` ROMs in CGB-E.
-Before/current/reference runs total 528 executions over 176 cases. The previous
-core matched 166; the correction matches 174, with no newly mismatching case.
-The remaining pair is normal-speed VRAM read/write at startup pad12: both
-cores are compared at the same executed instruction, but GBB still returns FF
-or retains A5 where the reference reads A5 or stores 5A. These differences
-predate the correction. Its ordinary-line handoff exception intentionally does
-not apply to LCD startup. The fixture preserves the unresolved pair rather
-than reporting the whole startup scope as passing.
+Before/current/reference runs total 528 executions over 176 cases. The initial
+core matched 166; the ordinary-line correction matched 174. The remaining pair
+was normal-speed VRAM read/write at startup pad12 (dot 80): GBB returned FF or
+retained A5 where the reference read A5 or stored 5A. These differences predated
+the ordinary-line correction; its historical results remain in the fixture.
+
+A separate CPU startup exception now allows those two accesses at normal
+speed, while retaining double-speed blocking, direct/debug arbitration and
+ordinary-line behavior. All 176 startup access results now agree on CGB-E;
+additional end-only substitutions match 176/176 each on CGB0 and CGB-C.
+The local contract adds 144 startup witnesses over both banks, both speeds,
+dots 79/80/81, reads/writes and serialized replay on all six native profiles.
+Six additional DMG/MGB/CGB compatibility controls retain startup blocking.
+Disabling only the new startup exception makes 24 native assertions fail.
+These are startup-compatibility checks for the AGB profiles, not independent
+AGB hardware validation. CPU clocks and the renderer remain unchanged.
+The repeated startup snapshots equal each core's end-only serialized state,
+and all 176 equal-cost padding controls agree. After this startup correction,
+the 4,928-case hardware matrix still has zero new regressions; all 300 private
+captures and their metadata, twenty elapsed-clock rows and 238 frontier rows
+remain identical to the preceding correction. All 274 selected public
+headless contracts pass again with no skipped tests.
 
 The mode/pixel timelines are still different, so the combined research CLI
 continues to exit 1 despite matching every executed access. The release remains
-on hold with its baseline unchanged. Next resolve the normal-speed first-line
-VRAM handoff, then isolate ordinary-line pixel-emission phase while retaining
-the matching access gates as constraints. Moving output or shortening mode 3
+on hold with its baseline unchanged. Next isolate ordinary-line
+pixel-emission phase while retaining the matching access gates as constraints. Moving output or shortening mode 3
 cannot be justified by the access results alone.

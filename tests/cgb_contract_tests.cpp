@@ -306,6 +306,81 @@ void test_native_pixel_access_boundaries() {
     }
 }
 
+void test_native_startup_vram_access() {
+    // The shortened first line has its own dot-80 CPU access window: normal
+    // speed reaches VRAM, double speed is already blocked. Keep both banks and
+    // save/load replay covered independently from the ordinary-line witnesses.
+    for (const auto model : {gameboy::HardwareModel::cgb0, gameboy::HardwareModel::cgb_c,
+                             gameboy::HardwareModel::cgb_e, gameboy::HardwareModel::cgb,
+                             gameboy::HardwareModel::agb0, gameboy::HardwareModel::agb}) {
+        for (const bool fast : {false, true}) {
+            for (const unsigned bank : {0U, 1U}) {
+                for (const bool write : {false, true}) {
+                    for (const unsigned dot : {79U, 80U, 81U}) {
+                        auto image = cgb_test_rom({0x3e, 1, 0xe0, 0x4d, 0x10, 0});
+                        image[0x200] = write ? 0x70 : 0x7e;
+                        gameboy::Emulator e{gameboy::Cartridge{std::move(image)}, model};
+                        if (fast) {
+                            for (unsigned n = 0; n < 3; ++n) (void)e.step();
+                            while (e.cpu().debug_speed_switch_cycles_remaining()) (void)e.step();
+                            (void)e.step();
+                            check(e.bus().double_speed(), "startup access witness enters double speed");
+                        }
+                        auto& bus = e.bus();
+                        bus.write8(0xff40, 0);
+                        bus.write8(0xff4f, static_cast<std::uint8_t>(bank));
+                        bus.write8(0x8100, 0xa5);
+                        auto r = e.cpu().registers();
+                        r.pc = 0x200; r.b = 0x5a; r.h = 0x81; r.l = 0;
+                        e.set_cpu_registers(r);
+                        bus.write8(0xff40, 0x91);
+                        bus.tick(dot * (fast ? 2 : 1) - 8);
+                        check(bus.read8(0xff44) == 0, "startup witness remains on the shortened first line");
+                        const auto before = e.save_state();
+                        check(e.step() == 8 && bus.debug_ppu_dot() == dot,
+                              "startup access samples at the specified dot without changing instruction timing");
+                        const bool allowed = dot < 80 || (dot == 80 && !fast);
+                        if (write) {
+                            check(bus.debug_read_vram(static_cast<std::uint8_t>(bank), 0x100) ==
+                                      (allowed ? 0x5a : 0xa5),
+                                  "startup write observes the speed-specific native handoff");
+                        } else {
+                            check(e.cpu().registers().a == (allowed ? 0xa5 : 0xff),
+                                  "startup read observes the speed-specific native handoff");
+                        }
+                        if (dot == 80) {
+                            check(bus.read8(0x8100) == 0xff,
+                                  "startup CPU handoff does not relax direct VRAM arbitration");
+                        }
+                        const auto after = e.save_state();
+                        e.load_state(before);
+                        (void)e.step();
+                        check(e.save_state() == after, "startup VRAM handoff replays through save/load");
+                    }
+                }
+            }
+        }
+    }
+    for (const auto model : {gameboy::HardwareModel::dmg, gameboy::HardwareModel::mgb,
+                             gameboy::HardwareModel::cgb_e}) {
+        for (const bool write : {false, true}) {
+            auto image = test_rom({static_cast<std::uint8_t>(write ? 0x70 : 0x7e)});
+            gameboy::Emulator e{gameboy::Cartridge{std::move(image)}, model};
+            auto& bus = e.bus();
+            bus.write8(0xff40, 0); bus.write8(0x8100, 0xa5);
+            auto r = e.cpu().registers();
+            r.h = 0x81; r.l = 0; r.b = 0x5a;
+            e.set_cpu_registers(r);
+            bus.write8(0xff40, 0x91); bus.tick(72);
+            check(e.step() == 8, "monochrome startup access retains instruction timing");
+            if (write) check(bus.debug_read_vram(0, 0x100) == 0xa5,
+                             "native startup exception preserves monochrome and compatibility write blocking");
+            else check(e.cpu().registers().a == 0xff,
+                       "native startup exception preserves monochrome and compatibility read blocking");
+        }
+    }
+}
+
 void test_split_double_speed_clocks() {
     const auto image = cgb_test_rom({0x3e, 1, 0xe0, 0x4d, 0x10, 0, 0, 0xf0, 0x0f});
     const auto prepare = [](gameboy::Emulator& emulator) {
@@ -600,6 +675,7 @@ int main() {
         test_native_interrupt_fetch_sample();
         test_split_double_speed_clocks();
         test_native_pixel_access_boundaries();
+        test_native_startup_vram_access();
     } catch (const std::exception& error) {
         std::cerr << "Unexpected exception: " << error.what() << '\n';
         return 1;

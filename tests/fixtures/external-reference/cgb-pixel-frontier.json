@@ -16196,10 +16196,10 @@
     "scripts/cgb_frame_anchor_probe.py": "64ebef18d72fe32b55c9dcebfb6a9279459a5584123d7b3872cd2e62c41fd39c",
     "src/cpu.cpp": "c1a6515a6d79fce11d19d2574a248e87a7430139286e0b9088d47f67856eb945",
     "src/emulator.cpp": "2b61b6e4dd0b7f49e9e797fa2d7dfcc84d36cb2410b69f96d2bb7feb63d74227",
-    "src/ppu.cpp": "c0f4557a48160f91451e85cd131694ac9802452324211bd228bbbb4d2efe9177",
+    "src/ppu.cpp": "7fb6431ce0df1c7649ed1194293958a1ef1dc449df7999670408177ea5175176",
     "src/ppu_timing.cpp": "03661bbe95056696279b1ae8b4e472d063655447e986487542fe4d339eb760ee",
     "tests/fixtures/research/cgb-pixel-startup-rejected.patch": "4a786334186a8e4682e82d53e02077655ad86e9c7312ec1edeb3f1c91b4a19f7",
-    "include/gameboy/ppu.hpp": "500d0ab829762e62de098ef366a2f21e72e9e726c8f3034195045d31040c1002",
+    "include/gameboy/ppu.hpp": "568fd97483e6aadba26c98562f5c1534c1d081ff1c48b43c4b76d2234f4977d9",
     "include/gameboy/memory_bus.hpp": "61d8f5b035c82a22987d4ecffc13c9b9031a880e0783a5236558a1bb93337084"
   },
   "reference": {
@@ -16268,5 +16268,24 @@
     "all_paired_rows_identical": true,
     "paired_rows": 238,
     "rows_sha256": "ec8599d7cc30420c85583d866c27d2250dd42a3beca910452d75aaf210cde054"
+  },
+  "revalidation_after_startup_vram_correction": {
+    "base_revision": "e08c21de95d89f61157a8133ba7998c5abd21394",
+    "previous_source_sha256": {
+      "scripts/cgb_pixel_frontier_probe.py": "4fa138f2392d8c131633399a4559b620f949e365ccf6a7ab44e349b1f8f0e560",
+      "scripts/cgb_elapsed_anchor_probe.py": "4c7605fa042379bc2dbc082b90e7266defc7332a13a87f82c200a82d02ba92bd",
+      "scripts/gbb_elapsed_capture.cpp": "2401b96b382fa0790ae88c6355115b597c89d61a9ce1c6e274cd9c07d578624e",
+      "scripts/sameboy_elapsed_capture.c": "daf976f40bd54c8b0314ce405c37912c5a859dc7f0d25da38a417616a7792013",
+      "scripts/cgb_frame_anchor_probe.py": "64ebef18d72fe32b55c9dcebfb6a9279459a5584123d7b3872cd2e62c41fd39c",
+      "src/cpu.cpp": "c1a6515a6d79fce11d19d2574a248e87a7430139286e0b9088d47f67856eb945",
+      "src/emulator.cpp": "2b61b6e4dd0b7f49e9e797fa2d7dfcc84d36cb2410b69f96d2bb7feb63d74227",
+      "src/ppu.cpp": "c0f4557a48160f91451e85cd131694ac9802452324211bd228bbbb4d2efe9177",
+      "src/ppu_timing.cpp": "03661bbe95056696279b1ae8b4e472d063655447e986487542fe4d339eb760ee",
+      "tests/fixtures/research/cgb-pixel-startup-rejected.patch": "4a786334186a8e4682e82d53e02077655ad86e9c7312ec1edeb3f1c91b4a19f7",
+      "include/gameboy/ppu.hpp": "500d0ab829762e62de098ef366a2f21e72e9e726c8f3034195045d31040c1002",
+      "include/gameboy/memory_bus.hpp": "61d8f5b035c82a22987d4ecffc13c9b9031a880e0783a5236558a1bb93337084"
+    },
+    "paired_rows_identical": true,
+    "cases": 238
   }
 }

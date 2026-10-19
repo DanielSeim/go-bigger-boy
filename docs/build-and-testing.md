@@ -613,10 +613,15 @@ grids were rerun unchanged; their full paired rows are identical to the earlier
 core, with previous source hashes retained in revalidation metadata.
 Additional end-only CGB-E startup controls use ROMs from `startup_scenarios()`
 and the same adapters. The 176 before/current/reference comparisons improve
-from 166 to 174 matching access results, without a newly mismatching case.
-Two pre-existing normal-speed first-line VRAM handoff results remain
-unqualified. The live boundary/save-state unit coverage also includes the
-AGB0/AGB startup-compatibility profiles; those are not independent AGB sweeps.
+from 166 to 174 matching access results at the ordinary-line correction
+stage. A separate startup correction now matches all 176/176, preserving the
+old results explicitly. Further startup model controls match 176/176 each on
+CGB0 and CGB-C. The CPU permits first-line dot-80 VRAM access only at normal
+speed; direct access stays blocked. Both banks and serialized replay have
+144 additional local CPU witnesses, and live authored startup ROMs check
+observer/end-only equivalence across the VRAM entry boundary. The live
+boundary/save-state unit coverage also includes the AGB0/AGB
+startup-compatibility profiles; those are not independent AGB sweeps.
 
 
 `gameboy_cgb_reti_dispatch_probe_contract` adds software-requested RETI/RET/EI
