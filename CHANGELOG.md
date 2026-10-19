@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Allow ThreadSanitizer overhead in the live CGB probe contract timeouts while
+  retaining every control and the shorter limits in ordinary builds.
+
 - Parallelize ThreadSanitizer contracts across four Linux runners, splitting
   the longest firmware contract by scenario and SGB model while retaining all
   assertions, the SDL smoke test, and a combined required-check status.

@@ -835,6 +835,17 @@ if(GAMEBOY_BUILD_TESTS)
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_vram_tail_probe_tests.py
                          $<TARGET_FILE:gameboy_pixel_access_trace>)
         set_tests_properties(gameboy_cgb_vram_tail_probe_contract PROPERTIES TIMEOUT 90)
+        if(GAMEBOY_ENABLE_THREAD_SANITIZER)
+            # These execute bounded ROMs and compare complete serialized states
+            # across many fresh processes. TSan instrumentation makes that work
+            # exceed the native 60/90-second limits; retain every live control.
+            set_tests_properties(
+                gameboy_cgb_pixel_access_probe_contract
+                gameboy_cgb_pixel_phase_probe_contract
+                gameboy_cgb_object_access_probe_contract
+                gameboy_cgb_vram_tail_probe_contract
+                PROPERTIES TIMEOUT 600)
+        endif()
         add_test(NAME gameboy_cgb_stat_clock_probe_contract
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_stat_clock_probe_tests.py

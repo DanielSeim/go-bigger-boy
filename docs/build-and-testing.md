@@ -204,6 +204,11 @@ Use indices 0 through 3 to cover the complete CI selection, or add `--plan-only`
 to inspect assignment without running tests. Duration estimates affect balancing
 only; they do not change test timeouts or coverage.
 
+The four live CGB pixel/access probe contracts retain their native 60/90-second
+limits in ordinary builds. TSan builds allow up to 600 seconds per contract for
+instrumented emulation and complete-state snapshot comparisons. The owned ROMs,
+live controls, per-process limits and assertions remain the same.
+
 For the bounded dashboard input smoke, install Xvfb and xdotool, then run:
 
 ```sh
