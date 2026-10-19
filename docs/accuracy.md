@@ -1078,3 +1078,33 @@ by comparison of the internal request edge and interrupt sampling against the
 reference. No CPU/PPU timing, commercial screenshot baseline or release gate
 has been changed on this evidence alone. The research CLI retains exit 1 and
 `qualification: false` for the measured mismatch.
+
+
+The complementary `scripts/cgb_stat_boundary_read_probe.py` disables service
+without changing setup duration: EI is replaced by a four-cycle NOP while IE=2
+is retained and the initial DI remains effective. It unrolls the two foreground
+patterns with taken JR +0 instructions, preserving nominal timing and register
+and flag effects. Three loop counts around `floor(452 * speed_factor / loop_cost)`,
+eight post-LCD NOP phases and every instruction slot define a common grid;
+there are no per-core offsets or fits. The primary IF read starts at the end of
+that prefix. Later observations record BC, STAT, LY, IF, DIV and KEY1; these
+reads happen sequentially and cannot be interpreted as a simultaneous snapshot.
+
+All 288 normal/double-speed comparisons match pinned SameBoy. Every case has
+two repeatable captures per core at completed PPU frame 4, with 1,152 raw states
+individually checked against the analyzer and source ROM hashes. At each speed,
+19 primary reads report no STAT request and 125 report a pending STAT request;
+the sweep therefore exercises both sides of the observable transition. Exact
+BC counts validate prefix execution. Source fingerprints and all observations
+are recorded in
+[`cgb-stat-boundary-read.json`](../tests/fixtures/external-reference/cgb-stat-boundary-read.json).
+The paired CLI exits 0 for this measured scope, retaining `qualification: false`.
+
+This strengthens the CPU-visible IF-read controls but does not resolve the
+16/64 first-vector differences. A CPU read consumes time and is sampled at a
+bus phase; agreement can conceal a difference between physical request-edge
+and read-sampling phases. The next diagnostic should anchor the accepted LCDC
+write, first internal STAT request and interrupt dispatch on the same clock
+axis, explicitly separating instruction callback boundaries from bus-access
+phases. No CPU/PPU timing, private screenshot baseline or publication gate was
+changed by this experiment; the unresolved release validation stays on hold.

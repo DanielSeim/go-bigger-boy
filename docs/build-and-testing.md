@@ -385,6 +385,27 @@ currently exits 1: 48/64 comparisons match, including every software control.
 The passing offline contract validates the tooling, not reference parity.
 
 
+`gameboy_cgb_stat_boundary_read_probe_contract` checks a complementary IF-read
+sweep with IME disabled and IE still set to 2. Run:
+
+```sh
+python3 scripts/cgb_stat_boundary_read_probe.py \
+  --runner build/gbb_test_runner --sameboy-capture /path/to/sameboy-capture \
+  --output /path/to/new-stat-boundary-read-results
+```
+
+The grid covers both foreground patterns, eight post-LCD NOP phases, three
+whole-loop counts near the 452-dot first-line boundary, every instruction slot
+and both speeds: 288 cartridges, two takes per core at completed PPU frame 4.
+Taken branches use a zero displacement for finite unrolling, preserving their
+cycle cost and register/flag effects. The primary IF read starts after that
+prefix; it does not measure IF instantaneously at the preceding boundary.
+The paired run matches all 288 cases and exits 0. Both pending and non-pending
+primary IF reads are covered at each speed, with all 1,152 raw captures checked.
+This does not resolve the separate first-vector mismatches.
+See [accuracy](accuracy.md) for the measured scope and limits.
+
+
 `gameboy_cgb_reti_dispatch_probe_contract` adds software-requested RETI/RET/EI
 phase sweeps and an equal-cost direct-call control. These exposed and verify a
 CGB timer-entry clock correction; the guide distinguishes the now-matching

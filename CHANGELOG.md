@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add equal-cost foreground IF-read controls around first-STAT instruction
+  boundaries, retaining IE while disabling interrupt service. Record repeated
+  independent comparisons without changing emulator timing or release baselines.
+
 - Add authored first-STAT-vector witnesses with stacked return addresses,
   foreground instruction phase sweeps and LCD-off software-interrupt controls.
   Keep the measured reference mismatches explicit without changing CPU timing.
