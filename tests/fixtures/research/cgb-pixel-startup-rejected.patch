@@ -1,0 +1,11 @@
+--- a/src/ppu_timing.cpp
++++ b/src/ppu_timing.cpp
+@@ -291,7 +291,7 @@
+             ? 4U
+             : 0U;
+     startup_delay_ = static_cast<std::uint8_t>(
+-        12U - phase_correction + mode3_delay);
++        (cgb_mode_ ? 10U : 12U) - phase_correction + mode3_delay);
+     scroll_discard_ = static_cast<std::uint8_t>(scx_ & 7);
+     window_delay_ = 0;
+     sprite_delay_ = 0;

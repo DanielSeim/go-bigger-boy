@@ -803,6 +803,11 @@ if(GAMEBOY_BUILD_TESTS)
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_elapsed_anchor_probe_tests.py
                          $<TARGET_FILE:gameboy_elapsed_capture>)
         set_tests_properties(gameboy_cgb_elapsed_anchor_probe_contract PROPERTIES TIMEOUT 60)
+        add_test(NAME gameboy_cgb_pixel_frontier_probe_contract
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_pixel_frontier_probe_tests.py
+                         $<TARGET_FILE:gameboy_elapsed_capture>)
+        set_tests_properties(gameboy_cgb_pixel_frontier_probe_contract PROPERTIES TIMEOUT 60)
         add_test(NAME gameboy_cgb_stat_clock_probe_contract
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_stat_clock_probe_tests.py

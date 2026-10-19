@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add authored CGB pixel-frontier sweeps across both CPU speeds, fine scroll
+  and preloaded palette colors. Preserve explicit reference disagreements and
+  a rejected startup-delay experiment; leave production PPU timing unchanged.
+
 - Add bounded elapsed-clock CGB capture and same-owned-boot comparisons. Record
   first-frame presentation and two-pixel boundary differences explicitly;
   preserve private release baselines pending independent validation.

@@ -532,6 +532,36 @@ research evidence, not a passing release gate. Public CTest checks the capture
 adapter, disabled LCD, target bounds, overwrite protection, split-capture
 equivalence and frozen evidence without requiring SameBoy or private inputs.
 
+`gameboy_cgb_pixel_frontier_probe_contract` adds first-frame and steady-state
+pixel-prefix controls using the same capture adapters:
+
+```sh
+python3 scripts/cgb_pixel_frontier_probe.py \
+  --gbb-capture build-headless/gbb_elapsed_capture \
+  --sameboy-capture /tmp/sameboy-elapsed-capture \
+  --output /path/to/new-pixel-frontier-results
+```
+
+Thirty-two first-frame ROMs cover both speeds, all eight SCX fine-scroll values
+and two colors initialized before LCD enable. They capture before the first
+VBlank, so their handler has not executed and no palette is written with the
+LCD on. Two existing steady-state ROMs retain their VBlank color markers.
+Seven fixed clock targets per ROM, repeated twice per core, produce 952 images
+and 238 paired visible-row witnesses. The extra `LD A,SCX` costs eight CPU
+clocks; the authored schedule includes that cost identically in both cores.
+No reference clock is shifted to fit GBB. The probe rejects differing clock,
+LY or completed-frame anchors and rows containing anything other than the
+expected current-color prefix and previous-color suffix.
+
+The recorded CLI exits **1**: 44 rows match, four differ by one pixel at the
+start of output, and 190 differ by two pixels. Preloaded color changes preserve
+the frontier positions in both cores. The frozen fixture is unqualified
+research evidence. An isolated native-CGB startup-delay reduction from 12 to
+10 dots leaves 194 one-pixel disagreements and fails the CGB save/load contract.
+Its patch under `tests/fixtures/research/cgb-pixel-startup-rejected.patch` is
+excluded from all builds; its base source hash and rejection are recorded.
+See [accuracy](accuracy.md) for the remaining interpretation limits.
+
 
 `gameboy_cgb_reti_dispatch_probe_contract` adds software-requested RETI/RET/EI
 phase sweeps and an equal-cost direct-call control. These exposed and verify a

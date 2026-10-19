@@ -1318,3 +1318,38 @@ Next isolate pixel-emission and palette-write phases with authored, steady-state
 controls, retaining first-frame presentation as a separate witness before
 revisiting the commercial mismatches. No release or baseline update is justified
 by these controls alone.
+
+The follow-up `cgb-pixel-frontier.json` expands this to 238 paired visible-row
+samples over 34 authored ROMs. Thirty-two first-frame controls vary native
+speed, all SCX fine-scroll values and marker red=1/2. Both colors are written
+before LCD enable. Every sample remains before the first normal VBlank, so the
+VBlank palette handler has not executed. Two steady-state controls retain the
+earlier normal/speed-switched marker transitions. Seven fixed absolute clock
+targets per ROM are repeated twice per core (952 captures). Actual elapsed
+clocks, LY and completed-frame counts agree in every paired sample.
+
+Forty-four rows match because neither core has emitted a pixel yet. Four
+samples show a one-pixel reference lead where only the reference has started
+drawing; 190 show a two-pixel lead. Both initialized colors produce identical
+frontier positions within each core. All fourteen steady-state samples retain
+the two-pixel lead. Thus active palette writes, first-frame presentation at
+VBlank and a particular fine-scroll setting are unnecessary to reproduce this
+raw framebuffer difference. These observations do not establish which core
+matches hardware or separate LCD-write, line-start and pixel-output phases.
+
+An isolated experiment changed only native CGB `startup_delay_` from 12 to 10
+dots. It retained the 44 matching rows, but all other 194 still differed by
+one pixel. It also failed the existing CGB contract with `Save state contains
+invalid PPU timing state`: the earlier transfer completion produces timing
+outside the current serializer's accepted range. The PPU timing contract alone
+passed, illustrating why a single focused contract is insufficient. This
+candidate was rejected without changing the serializer to accommodate it.
+The public patch and required base hash preserve the experiment; production
+source, the normal build library and private baselines were never modified.
+
+The next target is to measure first pixel, last pixel and mode-3 VRAM/palette
+access boundaries in one authored witness. That can distinguish raw output
+phase from CPU-visible transfer length before attempting another correction.
+The original fifteen private screenshots remain unqualified and release
+publication remains on hold. A closer pixel frontier alone cannot qualify
+save-state behavior or the release.
