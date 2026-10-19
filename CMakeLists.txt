@@ -656,6 +656,9 @@ if(GAMEBOY_BUILD_SDL)
 endif()
 
 if(GAMEBOY_BUILD_TESTS)
+    add_executable(gameboy_pixel_access_trace scripts/gbb_pixel_access_trace.cpp)
+    target_link_libraries(gameboy_pixel_access_trace PRIVATE gameboy_core)
+    set_target_properties(gameboy_pixel_access_trace PROPERTIES OUTPUT_NAME gbb_pixel_access_trace)
     add_executable(gameboy_elapsed_capture scripts/gbb_elapsed_capture.cpp)
     target_link_libraries(gameboy_elapsed_capture PRIVATE gameboy_core)
     set_target_properties(gameboy_elapsed_capture PROPERTIES OUTPUT_NAME gbb_elapsed_capture)
@@ -808,6 +811,11 @@ if(GAMEBOY_BUILD_TESTS)
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_pixel_frontier_probe_tests.py
                          $<TARGET_FILE:gameboy_elapsed_capture>)
         set_tests_properties(gameboy_cgb_pixel_frontier_probe_contract PROPERTIES TIMEOUT 60)
+        add_test(NAME gameboy_cgb_pixel_access_probe_contract
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_pixel_access_probe_tests.py
+                         $<TARGET_FILE:gameboy_pixel_access_trace>)
+        set_tests_properties(gameboy_cgb_pixel_access_probe_contract PROPERTIES TIMEOUT 60)
         add_test(NAME gameboy_cgb_stat_clock_probe_contract
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_stat_clock_probe_tests.py

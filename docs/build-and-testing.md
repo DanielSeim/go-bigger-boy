@@ -562,6 +562,48 @@ Its patch under `tests/fixtures/research/cgb-pixel-startup-rejected.patch` is
 excluded from all builds; its base source hash and rejection are recorded.
 See [accuracy](accuracy.md) for the remaining interpretation limits.
 
+`gameboy_cgb_pixel_access_probe_contract` combines pixel output with executed
+VRAM and BG-palette accesses on native CGB-E. The headless build supplies
+`gbb_pixel_access_trace`; build the optional pinned SameBoy 1.0.3 adapter:
+
+```sh
+cc -std=c11 -O3 -Wall -Wextra -Werror -Wno-multichar -DGB_INTERNAL \
+  -I /path/to/SameBoy scripts/sameboy_pixel_access_trace.c \
+  -L /path/to/SameBoy/build/lib -lsameboy \
+  -Wl,-rpath,/path/to/SameBoy/build/lib -lm -o /tmp/sameboy-pixel-access
+python3 scripts/cgb_pixel_access_probe.py \
+  --gbb-access-trace build-headless/gbb_pixel_access_trace \
+  --sameboy-access-trace /tmp/sameboy-pixel-access \
+  --output /path/to/new-pixel-access-results
+```
+
+Each adapter accepts `ROM BOOT [--end-only]`, restricts inputs to authored
+32-KiB native CGB ROM-only images and a 256-byte owned boot, and observes the
+PC=1000..1100 window. Execution is bounded to 20 million 8-MHz clocks and 512
+window instructions; at most 513 snapshots are retained. No battery files are
+loaded or written. The reference uses pinned internal ABI 15 only for raw
+VRAM/palette reads and masks the unused host RTC epoch solely in a copied
+serialization, as with the earlier STAT observer. LY reads synchronize its
+deferred pixels before inspection. First/last pixel observations are bounded
+instruction-clock intervals, not exact hardware edge times.
+
+The 176 ROMs sweep VRAM/BG-palette reads/writes at mode-3 entry/exit, at both
+CPU speeds. They access an unused tile and unused palette color; the red pixel
+marker remains intact. ROM-authored STAT reads replace three NOPs at equal
+12-clock cost, with the write operand restored before each tested instruction.
+This prevents the reference's batched and incremental render paths from
+invalidating the snapshot-state control. Two snapshot runs, one end-only run
+and one equal-cost NOP end-only control per core give 1,408 executions.
+
+Every snapshot run repeats and matches its end-only serialized state; every
+access result matches the NOP control. Of the cross-core executed access
+results, 166 match and ten differ. Mode and pixel timelines remain explicitly
+different; the paired CLI exits **1**. A rejected quiet-NOP calibration is
+preserved because its final visible snapshot agrees while its serialized
+reference renderer differs. Those differences are not masked. Public CTest
+needs no external library and checks live allowed/blocked accesses, serialized
+state equivalence, bounds, invalid records and the frozen paired evidence.
+
 
 `gameboy_cgb_reti_dispatch_probe_contract` adds software-requested RETI/RET/EI
 phase sweeps and an equal-cost direct-call control. These exposed and verify a

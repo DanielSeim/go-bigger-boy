@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add combined native CGB-E pixel-output and CPU-executed VRAM/palette access
+  witnesses. Record ten boundary discrepancies, equal-cost padding controls and
+  snapshot-state checks without changing production timing or release baselines.
+
 - Add authored CGB pixel-frontier sweeps across both CPU speeds, fine scroll
   and preloaded palette colors. Preserve explicit reference disagreements and
   a rejected startup-delay experiment; leave production PPU timing unchanged.

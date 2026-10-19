@@ -1353,3 +1353,59 @@ phase from CPU-visible transfer length before attempting another correction.
 The original fifteen private screenshots remain unqualified and release
 publication remains on hold. A closer pixel frontier alone cannot qualify
 save-state behavior or the release.
+
+The combined `cgb-pixel-access.json` witness now measures actual executed
+VRAM and BG-palette reads/writes alongside the pixel frontier and CPU-visible
+STAT mode. It covers native CGB-E at both speeds, ordinary line-one mode-3
+entry/exit, eleven phases per boundary and four access operations (176 ROMs).
+The tile and palette color under test are unused by the constant red marker.
+Read results come from CPU A after the instruction; write acceptance comes
+from the raw stored byte. Host reads never attempt the tested write. All
+clocks are normalized 8-MHz values relative to the same PC=1000 boundary.
+
+An initial quiet-NOP calibration failed closed: intermediate reference LY/STAT
+reads forced incremental rendering instead of its unobserved batched path.
+At normal/end/VRAM-read pad170, final registers, output frontier and visible
+bytes agreed, but three copied serialized bytes differed (`fetcher_y`,
+`last_tile_data_address` and `last_tile_index_address`). These renderer fields
+are not excluded from the state comparison or assumed harmless. The owned ROM
+builder and failed calibration fingerprints preserve this counterexample.
+
+The accepted measurement protocol uses ROM-authored STAT reads at equal cost
+to three NOPs, preventing whole-transfer batching in both snapshot and end-only
+runs. Both forms restore A=91 before the tested access. Each case runs twice
+with snapshots and once end-only in each core, then repeats the executed-access
+check with equal-duration NOP padding and no intermediate host snapshots.
+All 176 cases repeat and retain identical final serialization within each
+core (only the unused reference host RTC timestamp is masked in the copied
+buffer). Every NOP control returns the same access result as its polling form.
+This is 1,408 executions, with no production CPU/PPU changes.
+
+The cores agree on 166 executed access results and differ on ten. Each entry
+below represents a read/write pair:
+
+| Speed | Boundary | Access | GBB | Pinned reference |
+| --- | --- | --- | --- | --- |
+| Normal | Mode-3 entry | VRAM | blocked | allowed |
+| Double | Mode-3 entry | VRAM | blocked | allowed |
+| Double | Mode-3 entry | BG palette | blocked | allowed |
+| Normal | Mode-3 exit | BG palette | allowed | blocked |
+| Double | Mode-3 exit | BG palette | allowed | blocked |
+
+For example, the normal VRAM-read pair executes over clocks 1088..1104.
+GBB returns FF; the reference returns the initialized A5. The normal palette
+write at 1432..1456 stores 91 in GBB but retains 03 in the reference, even
+though both report mode 0 at the ending snapshot. The double-speed palette
+exit pair occurs at 1420..1432. These are executed instruction results, not
+inferred access rules based only on a sampled STAT mode. First/last pixel
+brackets are retained alongside them; their instruction-sized intervals must
+not be represented as exact per-dot edges.
+
+All full-window pixel and mode timelines still differ somewhere. The paired
+CLI therefore exits 1, independently of the 166 matching access results.
+Matching the reference does not alone establish hardware correctness. The next
+implementation target is native VRAM-entry and BG-palette entry/exit sampling,
+with read/write symmetry, speed and save/load controls retained. Object-palette
+accesses, other CGB revisions and broader fine-scroll/window/sprite effects
+remain outside this witness. The fifteen private release screenshots and
+publication hold are unchanged; no baseline refresh was performed.
