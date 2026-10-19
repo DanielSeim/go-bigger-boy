@@ -1566,3 +1566,49 @@ The original release hold and private baseline remain unchanged.
 Next isolate the native object-transfer boundary, including `00` readback and
 the double-speed dot-264 gate, before changing cancellation behavior. A closer
 framebuffer or a larger total match count cannot justify those four regressions.
+
+The next `cgb-vram-tail.json` sweep separates stored CPU data from fetch-side
+readback. It contains 496 owned CGB-E ROMs and 2,976 executions: both speeds,
+both CPU VRAM banks, stored sentinels A5/3C, CPU addresses 8100/8201, background
+tile byte pairs 0000/AA55/FFFF, two palette indices and both background banks.
+Additional controls fill the unfetched bank with high byte 96 and vary SCY
+0/3/7 with row-coded tile bytes and tile two at off-screen map column 20.
+Normal-speed accesses complete at scheduled dots 260/264/268; double speed
+adds 262/266. These use the previous authored instruction schedule, with
+actual elapsed 8-MHz instruction clocks validated in both cores.
+
+Every background color is the same red marker. LY/mode/frontier timelines
+remain identical within all sixteen data-variation timing groups, including
+across the 448 basic and 48 row/prefetch measurements. All ROM bytes and traces
+were revalidated against the final generator before freezing the joined
+evidence. Each observed take repeats and equals its end-only serialized state;
+the host observation does not change emulated state.
+
+At the tested normal-speed dot-264 boundary, the reference returns the byte
+at the background prefetch high-plane address in the CPU-selected VRAM bank,
+instead of either requested CPU address's stored sentinel. AA55 tile data
+returns 55 when the CPU and background select the same bank. Filling the
+other bank with 96 makes a CPU read from that bank return 96, rather than a
+fixed cross-bank zero. Palette selection does not change these results.
+Row-coded data follows background rows 1/4/0 for SCY 0/3/7. Replacing map
+column 20 with tile two selects D2/E3 according to the CPU bank, distinguishing
+the off-screen prefetch from the last visible tile. This is evidence for an
+address collision, not a universal constant-zero blocked-read rule.
+
+All tested double-speed dot-264 reference reads remain FF despite the varied
+data. An FF result alone is ambiguous: normal-speed FFFF data also returns FF
+at the collision. The frozen record classifies numerical FF separately from
+stored/other data and does not automatically call every FF read blocked.
+GBB still returns its stored byte at both dot-264 boundaries. The new grid
+therefore matches 336/496 and retains 160 disagreements. The earlier, distinct
+512-case object-access grid remains at 466 matches; production is unchanged.
+
+The headless contract checks live bank/address/row controls, complete-state
+observer equivalence, the retained reference correlations and rejection of
+unexpected timing changes or incomplete measurements. All six related CGB
+probe contracts pass. The research CLI still exits 1 for cross-core data
+disagreements and 2 for invalid or observer-dependent evidence. These are
+pinned SameBoy 1.0.3 CGB-E observations, not independent hardware validation.
+Next model and validate this address collision and the double-speed gate
+across broader transfer phases and models before changing cancellation.
+Saved-state layout, private baselines and the release hold remain unchanged.

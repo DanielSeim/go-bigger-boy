@@ -672,6 +672,29 @@ warm reset across all six native profiles. Colored late-enable witnesses
 also check hidden pixel gathering on both VRAM banks. The phase fixture preserves its
 old evidence separately from the newly measured ordinary OBJ-off behavior.
 
+`gameboy_cgb_vram_tail_probe_contract` separates transfer-end readback from
+stored and fetched bytes, using the same adapters:
+
+```sh
+python3 scripts/cgb_vram_tail_probe.py \
+  --gbb-access-trace build-headless/gbb_pixel_access_trace \
+  --sameboy-access-trace /tmp/sameboy-pixel-access \
+  --output /tmp/cgb-vram-tail
+```
+
+The output directory must be new. This 496-ROM read-only witness varies CPU
+and BG banks, two stored sentinels and CPU addresses, tile bytes, palette
+indices, SCY and off-screen prefetch tiles. Equal RGB palettes keep the marker
+unchanged. The tool rejects variations that alter LY/mode/frontier timing
+within an instruction-clock group, as well as non-repeating or observer-dependent
+state. Two observed takes and an end-only take per core give 2,976 executions.
+The frozen `cgb-vram-tail.json` includes source/reference provenance, examples
+and sixteen timing-group fingerprints. It records a bank-sensitive prefetch
+address collision in normal speed and FF readback at the double-speed boundary;
+unknown data values remain measurements. The distinct new grid retains
+160 mismatches and exits 1; invalid evidence exits 2. No production behavior
+or private baseline changes are made by this measurement.
+
 
 `gameboy_cgb_reti_dispatch_probe_contract` adds software-requested RETI/RET/EI
 phase sweeps and an equal-cost direct-call control. These exposed and verify a

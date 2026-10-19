@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Isolate native CGB transfer-end VRAM readback with owned bank, tile-row and
+  prefetch controls. Preserve reference address-collision observations without
+  changing production timing or private release baselines.
+
 - Schedule ordinary native CGB object fetches while OBJ display is disabled.
   Add executed VRAM/toggle reference sweeps and save/load witnesses; retain
   unresolved transfer-boundary and cancellation discrepancies explicitly.
