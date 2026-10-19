@@ -4,6 +4,7 @@
  * Counts actual VBlanks; artificial LCD-off/repeat callbacks never advance N.
  * Or: --mooneye ROM BOOT_ROM [cgb-e|cgb-c|cgb0] [MAX_8MHZ_CLOCKS]
  * Or: --pc-clock-window ROM BOOT_ROM START_PC END_PC [MODEL] [MAX_8MHZ_CLOCKS]
+ * Or: --boot-registers ROM BOOT_ROM [MODEL] [MAX_8MHZ_CLOCKS]
  */
 #include "Core/gb.h"
 #include "Core/display.h"
@@ -43,6 +44,52 @@ static int model_from_name(const char *name, GB_model_t *model) {
     return 1;
 }
 static int protocol_result=-1;
+static int boot_registers(int argc, char **argv) {
+    if (argc<4 || argc>6) return 2;
+    const char *name=argc>=5?argv[4]:"cgb-e";
+    GB_model_t model;
+    uint64_t limit=200000000;
+    if (!model_from_name(name,&model) ||
+        (argc==6 && !number(argv[5],UINT64_C(2000000000),&limit))) return 2;
+    GB_random_seed(0);
+    GB_gameboy_t *gb=GB_alloc();
+    if (!gb) return 3;
+    if (!GB_init(gb,model)) { GB_dealloc(gb);return 3; }
+    int result=4;
+    uint32_t pixels[160*144]={0};
+    GB_set_log_callback(gb,log_message);
+    if (GB_load_boot_rom(gb,argv[3]) || GB_load_rom(gb,argv[2])) goto done;
+    GB_debugger_set_disabled(gb,true);
+    GB_set_border_mode(gb,GB_BORDER_NEVER);
+    GB_set_rgb_encode_callback(gb,rgb);
+    GB_set_pixels_output(gb,pixels);
+    GB_set_turbo_mode(gb,true,true);
+    GB_set_turbo_cap(gb,0);
+    uint64_t clocks=0;
+    unsigned zero_steps=0;
+    int handoff=0;
+    for (;;) {
+        if ((GB_read_memory(gb,0xFF50)&1) && GB_get_registers(gb)->pc==0x100) {
+            handoff=1;break;
+        }
+        if (clocks>=limit) break;
+        unsigned step=GB_run(gb);
+        if (!step && ++zero_steps>1024) { result=3;goto done; }
+        if (step) zero_steps=0;
+        clocks+=step;
+    }
+    const GB_registers_t *r=GB_get_registers(gb);
+    printf("{\"schema\":\"gbb-sameboy-cgb-boot-registers-v1\",\"qualification\":false,"
+           "\"model\":\"%s\",\"result\":\"%s\","
+           "\"anchor\":\"boot_unmapped_before_cartridge_entry\","
+           "\"clocks_8mhz\":%" PRIu64 ",\"pc\":%u,\"sp\":%u,"
+           "\"af\":%u,\"bc\":%u,\"de\":%u,\"hl\":%u}\n",
+           name,handoff?"handoff":"timeout",clocks,r->pc,r->sp,
+           r->af,r->bc,r->de,r->hl);
+    result=handoff?0:3;
+done:
+    GB_free(gb);GB_dealloc(gb);return result;
+}
 static void mooneye_instruction(GB_gameboy_t *gb, uint16_t address, uint8_t opcode) {
     (void)address;
     if (opcode!=0x40 || protocol_result!=-1) return;
@@ -192,6 +239,7 @@ done:
     GB_free(gb);GB_dealloc(gb);return result;
 }
 int main(int argc,char **argv) {
+    if (argc>=2 && !strcmp(argv[1],"--boot-registers")) return boot_registers(argc,argv);
     if (argc>=2 && !strcmp(argv[1],"--mooneye")) return mooneye(argc,argv);
     if (argc>=2 && !strcmp(argv[1],"--pc-clock-window")) return pc_clock_window(argc,argv);
     uint64_t target,limit=200000000;

@@ -8,6 +8,16 @@ namespace gameboy {
 namespace {
 void reset_post_boot_cpu(Cpu& cpu, MemoryBus& bus, HardwareModel model) noexcept {
     cpu.reset(model);
+    // The native color boot exits with different DE/HL than its monochrome
+    // compatibility path. Match the cartridge mode, including reset.
+    if (is_cgb_hardware(model) && !is_agb_hardware(model) && bus.cgb_mode()) {
+        auto registers = cpu.registers();
+        registers.d = 0xff;
+        registers.e = 0x56;
+        registers.h = 0;
+        registers.l = 0x0d;
+        cpu.load_registers(registers);
+    }
     if (!is_agb_hardware(model)) return;
     std::uint8_t title = 0;
     if (!bus.cgb_mode()) {

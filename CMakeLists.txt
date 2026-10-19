@@ -783,6 +783,9 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_cgb_frame_anchor_probe_contract
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_frame_anchor_probe_tests.py)
+        add_test(NAME gameboy_cgb_boot_register_probe_contract
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_boot_register_probe_tests.py)
         add_test(NAME gameboy_cgb_pcm_stat_probe_contract
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_pcm_stat_probe_tests.py)

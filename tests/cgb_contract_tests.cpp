@@ -180,8 +180,10 @@ void test_cgb_memory_and_rendering() {
     auto& bus = emulator.bus();
     check(bus.cgb_mode() && emulator.cpu().registers().a == 0x11 &&
               emulator.cpu().registers().f == 0x80 &&
-              emulator.cpu().registers().e == 0x08 &&
-              emulator.cpu().registers().l == 0x7C,
+              emulator.cpu().registers().d == 0xFF &&
+              emulator.cpu().registers().e == 0x56 &&
+              emulator.cpu().registers().h == 0 &&
+              emulator.cpu().registers().l == 0x0D,
           "CGB cartridges start with CGB hardware detection state");
 
     auto edited_registers = emulator.cpu().registers();

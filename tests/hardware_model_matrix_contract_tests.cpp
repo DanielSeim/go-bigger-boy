@@ -71,16 +71,16 @@ constexpr std::array<ModelCase, 9> model_cases{{
      {0xFF, 0x00, 0x00, 0x14, 0x00, 0x00, 0xC0, 0x60}, 0xD8, 0, false,
      true, false},
     {gameboy::HardwareModel::cgb0, "CGB0",
-     {0x11, 0x80, 0x00, 0x00, 0x00, 0x08, 0x00, 0x7C}, 0x20, 0, true,
+     {0x11, 0x80, 0x00, 0x00, 0xFF, 0x56, 0x00, 0x0D}, 0x20, 0, true,
      false, true},
     {gameboy::HardwareModel::cgb_c, "CGB-C",
-     {0x11, 0x80, 0x00, 0x00, 0x00, 0x08, 0x00, 0x7C}, 0x1E, 0, true,
+     {0x11, 0x80, 0x00, 0x00, 0xFF, 0x56, 0x00, 0x0D}, 0x1E, 0, true,
      false, true},
     {gameboy::HardwareModel::cgb_e, "CGB-E",
-     {0x11, 0x80, 0x00, 0x00, 0x00, 0x08, 0x00, 0x7C}, 0x1E, 0, true,
+     {0x11, 0x80, 0x00, 0x00, 0xFF, 0x56, 0x00, 0x0D}, 0x1E, 0, true,
      false, true},
     {gameboy::HardwareModel::cgb, "CGB alias",
-     {0x11, 0x80, 0x00, 0x00, 0x00, 0x08, 0x00, 0x7C}, 0x1E, 0, true,
+     {0x11, 0x80, 0x00, 0x00, 0xFF, 0x56, 0x00, 0x0D}, 0x1E, 0, true,
      false, true},
 }};
 
@@ -94,6 +94,40 @@ void check_registers(const gameboy::CpuRegisters& actual,
           model + " boot CPU registers match its hardware profile");
     check(actual.sp == 0xFFFE && actual.pc == 0x0100,
           model + " boot stack and program counters match");
+}
+
+void test_cartridge_register_handoff() {
+    // Authored cartridge witness: store the incoming DE/HL without modifying
+    // either pair. Expected values were checked against the external boot path.
+    constexpr std::array<std::uint8_t, 19> witness{
+        0x7a, 0xea, 0x00, 0xc0, 0x7b, 0xea, 0x01, 0xc0,
+        0x7c, 0xea, 0x02, 0xc0, 0x7d, 0xea, 0x03, 0xc0,
+        0xc3, 0x10, 0x01};
+    for (const auto model : {gameboy::HardwareModel::automatic,
+                            gameboy::HardwareModel::cgb0,
+                            gameboy::HardwareModel::cgb_c,
+                            gameboy::HardwareModel::cgb_e,
+                            gameboy::HardwareModel::cgb}) {
+        for (const unsigned flag : {0U, 0x80U, 0xc0U}) {
+            if (model == gameboy::HardwareModel::automatic && flag == 0) continue;
+            auto rom = test_rom(flag != 0, false);
+            rom[0x143] = static_cast<std::uint8_t>(flag);
+            std::copy(witness.begin(), witness.end(), rom.begin() + 0x100);
+            gameboy::Emulator emulator{gameboy::Cartridge{std::move(rom)}, model};
+            const std::array<std::uint8_t, 4> expected = flag
+                ? std::array<std::uint8_t, 4>{0xff, 0x56, 0, 0x0d}
+                : std::array<std::uint8_t, 4>{0, 8, 0, 0x7c};
+            const auto initial = emulator.save_state();
+            for (unsigned run = 0; run < 3; ++run) {
+                for (unsigned step = 0; step < 8; ++step) (void)emulator.step();
+                for (unsigned byte = 0; byte < expected.size(); ++byte)
+                    check(emulator.bus().read8(static_cast<std::uint16_t>(0xc000 + byte)) == expected[byte],
+                          "cartridge observes native/compatibility DE/HL at startup, reset and restore");
+                if (run == 0) emulator.reset();
+                if (run == 1) emulator.load_state(initial);
+            }
+        }
+    }
 }
 
 void test_explicit_profiles() {
@@ -273,6 +307,7 @@ void test_public_model_catalog() {
 int main() {
     try {
         test_explicit_profiles();
+        test_cartridge_register_handoff();
         test_color_boot_mode_phases();
         test_power_on_work_ram();
         test_monochrome_header_logo();

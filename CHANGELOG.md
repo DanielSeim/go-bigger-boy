@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Correct native CGB post-boot DE/HL registers to match the independently
+  checked boot handoff, including reset and save-state restoration.
+
 ## [0.36.4] - 2026-10-18
 
 - Update legacy save-state and STOP-observer test fixtures for version 44,

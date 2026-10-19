@@ -1,0 +1,144 @@
+{
+  "schema": "gbb-cgb-boot-register-evidence-v1",
+  "qualification": false,
+  "date": "2026-10-19",
+  "sameboy_commit": "208ba4afabffab9edde416f2dbb8ae459e34adb8",
+  "reference_adapter_sha256": "8d0337dde4ffbc501ec36e417024060c99cee663129c10fb6ad06151213f6ed0",
+  "probe_sha256": "47e13bbf1c69ff279090a704aabe5e44da503eb91982055981d944df4e62733a",
+  "scope": "CPU registers at boot unmap before the first cartridge instruction; peripheral phases and screenshots are not qualified.",
+  "reference_boot": "Private original revision-specific boot images; excluded from the repository.",
+  "rows": [
+    {
+      "model": "cgb0",
+      "cgb_flag": 0,
+      "expected": {
+        "af": 4480,
+        "bc": 0,
+        "de": 8,
+        "hl": 124,
+        "sp": 65534,
+        "pc": 256
+      },
+      "gbb_matches_reference": true,
+      "repeatable": true
+    },
+    {
+      "model": "cgb0",
+      "cgb_flag": 128,
+      "expected": {
+        "af": 4480,
+        "bc": 0,
+        "de": 65366,
+        "hl": 13,
+        "sp": 65534,
+        "pc": 256
+      },
+      "gbb_matches_reference": true,
+      "repeatable": true
+    },
+    {
+      "model": "cgb0",
+      "cgb_flag": 192,
+      "expected": {
+        "af": 4480,
+        "bc": 0,
+        "de": 65366,
+        "hl": 13,
+        "sp": 65534,
+        "pc": 256
+      },
+      "gbb_matches_reference": true,
+      "repeatable": true
+    },
+    {
+      "model": "cgb-c",
+      "cgb_flag": 0,
+      "expected": {
+        "af": 4480,
+        "bc": 0,
+        "de": 8,
+        "hl": 124,
+        "sp": 65534,
+        "pc": 256
+      },
+      "gbb_matches_reference": true,
+      "repeatable": true
+    },
+    {
+      "model": "cgb-c",
+      "cgb_flag": 128,
+      "expected": {
+        "af": 4480,
+        "bc": 0,
+        "de": 65366,
+        "hl": 13,
+        "sp": 65534,
+        "pc": 256
+      },
+      "gbb_matches_reference": true,
+      "repeatable": true
+    },
+    {
+      "model": "cgb-c",
+      "cgb_flag": 192,
+      "expected": {
+        "af": 4480,
+        "bc": 0,
+        "de": 65366,
+        "hl": 13,
+        "sp": 65534,
+        "pc": 256
+      },
+      "gbb_matches_reference": true,
+      "repeatable": true
+    },
+    {
+      "model": "cgb-e",
+      "cgb_flag": 0,
+      "expected": {
+        "af": 4480,
+        "bc": 0,
+        "de": 8,
+        "hl": 124,
+        "sp": 65534,
+        "pc": 256
+      },
+      "gbb_matches_reference": true,
+      "repeatable": true
+    },
+    {
+      "model": "cgb-e",
+      "cgb_flag": 128,
+      "expected": {
+        "af": 4480,
+        "bc": 0,
+        "de": 65366,
+        "hl": 13,
+        "sp": 65534,
+        "pc": 256
+      },
+      "gbb_matches_reference": true,
+      "repeatable": true
+    },
+    {
+      "model": "cgb-e",
+      "cgb_flag": 192,
+      "expected": {
+        "af": 4480,
+        "bc": 0,
+        "de": 65366,
+        "hl": 13,
+        "sp": 65534,
+        "pc": 256
+      },
+      "gbb_matches_reference": true,
+      "repeatable": true
+    }
+  ],
+  "limits": [
+    "Software-reference agreement, not an independent hardware measurement.",
+    "Authored fixture uses an optional logo read from a private cartridge to satisfy original boot validation; no logo/ROM bytes or private capture hashes are bundled.",
+    "Correcting DE/HL is a startup bug fix, not evidence that the 16 outstanding screenshot differences are resolved."
+  ],
+  "sameboy_library_sha256": "1ba66d2d813d99267b1be27cbc4642d624bbb8c7370e881546b1223bec3cf9fb"
+}

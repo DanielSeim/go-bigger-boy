@@ -203,6 +203,34 @@ analog clock tolerance, LCD response, DAC variation, or full Game Boy
 Advance/Game Boy Player hardware. Separate boot contracts cover the AGB
 startup profiles; they are not added to the eight-model silicon matrix.
 
+Native CGB post-boot startup now gives cartridges `DE=FF56, HL=000D`;
+monochrome compatibility retains `DE=0008, HL=007C`. The fast startup path
+previously used the compatibility values in both modes. The independently
+checked original boot handoff agrees on CGB0, CGB-C and CGB-E for header flags
+`00`, `80` and `C0`, with two takes per case. The authored cartridge contract
+also observes these registers through WRAM writes after startup, reset and
+save-state restoration. Evidence is recorded in
+[`cgb-boot-registers.json`](../tests/fixtures/external-reference/cgb-boot-registers.json).
+
+To reproduce the CPU-register comparison, build `scripts/sameboy_cgb_capture.c`
+against the pinned SameBoy Core, then run:
+
+```sh
+python3 scripts/cgb_boot_register_probe.py \
+  --runner build/gbb_test_runner --sameboy-capture /path/to/sameboy-capture \
+  --boot-rom /private/cgbE_boot.bin --model cgb-e \
+  --logo-source /private/cartridge.gbc --output /private/boot-register-review
+```
+
+The optional logo source supplies only the header field needed by the original
+boot's validation. Keep that input and the generated cartridges outside the
+repository. Use each revision's corresponding boot image for `cgb0` and `cgb-c`.
+The reference command `--boot-registers` stops at boot unmap with `PC=0100`,
+before cartridge execution; failure to reach it is an error. The GBB witness
+must be its initial PC event and must complete the authored result protocol.
+This checks CPU registers only, not peripheral startup phases or screenshot
+accuracy. The outstanding release screenshot differences remain unqualified.
+
 The revision matrix is intentionally explicit: `dmg0`, `dmg` (DMG-B), `mgb`,
 `sgb`, `sgb2`, `cgb0`, `cgb-c`, and `cgb-e` are selectable in the test runner. The historical
 `cgb` spelling remains an alias for `cgb-e` so existing scripts and save states
@@ -823,6 +851,22 @@ fetch timestamps. Next resolve that boundary anchoring and validate LCD-on
 PPU/bus behavior before extending the staged model to other revisions.
 LCD-off PCM fixtures do not validate the LCD-on VRAM/OAM locking behavior
 [described in Pan Docs](https://github.com/gbdev/pandocs/blob/master/src/CGB_Registers.md#ff4d--key1spd-cgb-mode-only-prepare-speed-switch).
+
+A private commercial-cartridge follow-up separates fast-startup state from
+runtime timing. Super Mario Bros. Deluxe and Shantae both receive the native
+DE/HL handoff above when booted through the original reference or the same
+GBB replacement image. Correcting fast-startup DE/HL leaves their reviewed
+600-interval images unchanged. With the same replacement boot in both cores,
+STOP begins at matching elapsed bus clocks, but the first resumed instruction
+still finishes four 8-MHz ticks later in GBB. The subsequent LCD/interrupt
+schedule diverges further. Repeating the authored 20-case STOP matrix retains
+ten matching NOP controls and twenty matching register effects, with the
+existing switch-boundary differences intact. These observations locate a
+remaining runtime question; they do not establish its hardware cause or
+qualify the outstanding screenshots. Running the same boot image also does
+not establish identical undefined RAM contents or every peripheral phase.
+No fitted frame/time shift or CPU timing
+adjustment is accepted as a consequence of the register correction.
 
 DIV/APU edges are dispatched at their timer-cycle boundary rather than being
 queued until the end of a bus batch. The APU also models the hardware rule that
