@@ -354,6 +354,21 @@ not `--cycle-frame-capture` intervals. The current paired run returns exit 1:
 This research failure is retained separately from the passing offline tooling
 contract. See [accuracy](accuracy.md) for the measured scope and limits.
 
+`gameboy_cgb_stat_request_phase_probe_contract` checks the finer first-line
+IF/mode/LY read sweep and LCD-off software-STAT-request controls. Run the paired
+measurement with the same runner/adapter arguments and a new output directory:
+
+```sh
+python3 scripts/cgb_stat_request_phase_probe.py \
+  --runner build/gbb_test_runner --sameboy-capture /path/to/sameboy-capture \
+  --output /path/to/new-stat-request-phase-results
+```
+
+Its 86 comparisons repeat at completed PPU frame 4. All now match, after
+correcting split double-speed peripheral-clock accounting. This does not
+qualify the separate normal-speed LCD-startup IRQ counter discrepancy above.
+
+
 `gameboy_cgb_reti_dispatch_probe_contract` adds software-requested RETI/RET/EI
 phase sweeps and an equal-cost direct-call control. These exposed and verify a
 CGB timer-entry clock correction; the guide distinguishes the now-matching

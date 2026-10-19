@@ -133,6 +133,58 @@ void test_hram_dma_return() {
     }
 }
 
+void test_split_double_speed_clocks() {
+    const auto image = cgb_test_rom({0x3e, 1, 0xe0, 0x4d, 0x10, 0, 0, 0xf0, 0x0f});
+    const auto prepare = [](gameboy::Emulator& emulator) {
+        for (unsigned instruction = 0; instruction < 3; ++instruction) (void)emulator.step();
+        while (emulator.cpu().debug_speed_switch_cycles_remaining()) (void)emulator.step();
+        (void)emulator.step(); // Complete resumption with a NOP before measuring IF.
+        check(emulator.bus().double_speed(), "split-clock witness enters double speed");
+    };
+    for (const auto model : {gameboy::HardwareModel::cgb0, gameboy::HardwareModel::cgb_c,
+                             gameboy::HardwareModel::cgb_e, gameboy::HardwareModel::cgb}) {
+        gameboy::Emulator batch{gameboy::Cartridge{image}, model};
+        gameboy::Emulator split{gameboy::Cartridge{image}, model};
+        prepare(batch);
+        prepare(split);
+        const auto dot = batch.bus().debug_ppu_dot();
+        const auto clocks = batch.bus().debug_normalized_clocks();
+        check(batch.step() == 12 && batch.bus().debug_ppu_dot() == dot + 6 &&
+                  batch.bus().debug_normalized_clocks() == clocks + 12,
+              "double-speed IF read advances six PPU dots despite its 3+1 clock split");
+        (void)split.step();
+        batch.bus().tick(4);
+        split.bus().tick(3);
+        split.bus().tick(1);
+        check(batch.save_state() == split.save_state(),
+              "one double-speed machine cycle matches split 3+1 ticks");
+
+        const auto half_dot = split.bus().debug_ppu_dot();
+        split.bus().tick(1);
+        const auto half_state = split.save_state();
+        check(split.bus().debug_ppu_dot() == half_dot,
+              "one double-speed CPU tick retains its fractional PPU clock");
+        split.bus().tick(1);
+        const auto full_state = split.save_state();
+        check(split.bus().debug_ppu_dot() == half_dot + 1,
+              "two separate double-speed CPU ticks complete one PPU clock");
+        split.load_state(half_state);
+        split.bus().tick(1);
+        check(split.save_state() == full_state,
+              "save/load preserves the pending half clock through normalized bus time");
+
+        split.bus().tick(1);
+        const auto reset_dot = split.bus().debug_ppu_dot();
+        split.reset(); // The post-boot reset is a warm CPU reset.
+        split.bus().tick(1);
+        check(split.bus().debug_ppu_dot() == reset_dot + 1,
+              "warm CPU reset retains the pending peripheral half clock");
+        split.bus().initialize_cgb_power_on(model);
+        check(split.bus().debug_normalized_clocks() == 0,
+              "cold initialization resets the peripheral half-clock epoch");
+    }
+}
+
 void test_cgb_memory_and_rendering() {
     gameboy::Emulator speed{gameboy::Cartridge{cgb_test_rom({
         0x3E, 0x01, // LD A,1
@@ -372,6 +424,7 @@ int main() {
         test_ff74_native_and_compatibility();
         test_hram_dma_return();
         test_cgb_memory_and_rendering();
+        test_split_double_speed_clocks();
     } catch (const std::exception& error) {
         std::cerr << "Unexpected exception: " << error.what() << '\n';
         return 1;

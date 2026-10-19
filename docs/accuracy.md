@@ -901,6 +901,43 @@ CPU interrupt-recognition timing with a finer request/dispatch phase sweep.
 No CPU/PPU timing, commercial screenshot baseline or release gate changes are
 made on the strength of this counter difference.
 
+The finer `cgb_stat_request_phase_probe.py` uses thirteen post-enable CPU-NOP
+delays for separate primary IF, STAT-mode and LY reads. The common delay is
+432 PPU dots before the variable NOPs and the read instruction; every variable
+NOP adds four CPU clocks (four dots normally, two at double speed). Later
+fields in a sample are separate reads at later times, not a simultaneous PPU
+snapshot. Four further controls assert software STAT IF with LCD and STAT
+sources disabled and IE/IME already armed; the first handler records a
+foreground BC counter and an explicit handler guard. They cannot complete
+through the foreground path without actually servicing the interrupt.
+
+Before correction, 82/86 comparisons matched the pinned reference. All primary
+LY/mode samples and all eight software-request controls agreed, but four
+double-speed records differed in IF. For the primary IF sweep, the reference
+first exposed STAT at phase 7, while GBB exposed it at phase 8. The other
+three differences were later IF reads within records. At normal speed both
+primary IF sweeps first exposed it at phase 2.
+
+This exposed a concrete accounting error, independent of STAT arbitration:
+`MemoryBus::tick` rounded every double-speed batch down separately. An IF read
+advances `3 + 1` CPU clocks, so those calls produced only one PPU/cartridge dot
+instead of two. Peripheral conversion now carries the fractional dot using
+the existing 8-MHz normalized bus clock. The APU retains its separate alignment
+phase; CPU timer/serial clocks are not rescaled. No save-format change is
+needed. CGB0, CGB-C, CGB-E and the alias have direct instruction/split-tick,
+save/load, warm-reset and cold-initialization contracts. The added instruction
+contract rejects the pre-fix implementation.
+
+After correction all 86 comparisons repeat, satisfy the authored constraints
+and match, including the phase-7 double-speed IF sample. Evidence is recorded
+in [`cgb-stat-request-phase.json`](../tests/fixtures/external-reference/cgb-stat-request-phase.json).
+The original 48-comparison LCD-startup probe still matches 42/48: its six
+normal-speed STAT IRQ counter differences remain. Neither this software
+reference agreement nor the matching software requests qualifies every
+hardware-generated interrupt-recognition boundary. Next measure first-vector
+entry across different foreground instruction alignments; do not compensate
+the commercial screenshots with a frame offset.
+
 DIV/APU edges are dispatched at their timer-cycle boundary rather than being
 queued until the end of a bus batch. The APU also models the hardware rule that
 enabling it while the DIV/APU input is high skips the first falling-edge event;

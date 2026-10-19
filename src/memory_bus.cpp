@@ -462,8 +462,15 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
 
 void MemoryBus::tick(const unsigned cycles) noexcept {
     debug_bus_cycles_ += cycles;
+    // Preserve the half-dot phase when a double-speed bus cycle is split
+    // (notably the 3+1 CPU clocks used to read IF). Rounding each call down
+    // loses a PPU/cartridge clock. The saved normalized clock already carries
+    // this phase; it is independent of the APU's retained speed-switch phase.
+    const auto peripheral_cycles = double_speed_
+        ? static_cast<unsigned>((static_cast<std::uint64_t>(cycles) +
+                                  (normalized_clocks_ & 1U)) / 2)
+        : cycles;
     normalized_clocks_ += static_cast<std::uint64_t>(cycles) * (double_speed_ ? 1 : 2);
-    const auto peripheral_cycles = double_speed_ ? cycles / 2 : cycles;
     // OAM DMA takes 160 CPU M-cycles at either speed (320 PPU dots in
     // CGB double speed). HRAM delay routines must finish before WRAM RETs.
     tick_oam_dma(cycles);

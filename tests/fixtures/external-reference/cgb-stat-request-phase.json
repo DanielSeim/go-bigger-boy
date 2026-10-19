@@ -1,0 +1,2717 @@
+{
+  "schema": "gbb-cgb-stat-request-phase-evidence-v1",
+  "qualification": false,
+  "date": "2026-10-19",
+  "sameboy_commit": "208ba4afabffab9edde416f2dbb8ae459e34adb8",
+  "sameboy_library_sha256": "1ba66d2d813d99267b1be27cbc4642d624bbb8c7370e881546b1223bec3cf9fb",
+  "probe_sha256": "7ea56b4361f424ce018f239a39d62c2dc188b0d1e75b21817fd29c5f3bb948ed",
+  "adapter_source_sha256": "8d0337dde4ffbc501ec36e417024060c99cee663129c10fb6ad06151213f6ed0",
+  "bus_source_sha256_before": "813dbbb23f6f1ecc4c3f01132ad29e6408352ad9273a7c8def548a6587012171",
+  "bus_source_sha256_after": "3649221e836f7e103b5bd3b56201e5ea34d859ac658796cba1c8b2cd20939e43",
+  "runner_sha256_before": "587d9f49977725046e374a4f71c0ec05fbbc2e4688b41b53253876815b06c991",
+  "runner_sha256_after": "46c0f035af62a1febd8a47d3bee5f4a79ba25188b3e1dfb7ef64557f338366d3",
+  "boot_sha256": "c8937124cd7dcafc036dcad3ad46008ea57b4e76abfa3da6012ff8bdbd7687d0",
+  "adapter_sha256": "ccc958008c9d29fc5bee4b39d1c02bd0a48b5d7cdfd58e1a605bc9d5405aae10",
+  "summary": {
+    "comparisons": 86,
+    "matches_before": 82,
+    "matches_after": 86,
+    "all_repeatable": true,
+    "all_authored_constraints_match": true,
+    "paired_exit_before": 1,
+    "paired_exit_after": 0,
+    "lcd_startup_matches_after": 42,
+    "lcd_startup_comparisons": 48
+  },
+  "scope": "Common post-LCD CPU NOP delays, followed by one primary IF/mode/LY read; software IF controls keep LCD/STAT sources off until handler completion. Reads within each record occur at different times; no timestamp is fitted.",
+  "snapshot_fields": [
+    "first_if_or_mode_or_ly",
+    "later_if_low2",
+    "later_stat_mode",
+    "later_ly",
+    "div",
+    "key1_speed"
+  ],
+  "software_fields": [
+    "bc_high",
+    "bc_low",
+    "if_low2",
+    "div",
+    "key1_speed",
+    "handler_guard"
+  ],
+  "rows": [
+    {
+      "scenario": "if-phase-0",
+      "double_speed": false,
+      "rom_sha256": "c1a847ad9bf9485423bb7509b03f60c43a68cb09ea7bae25ab74c954ea3cc1bf",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-1",
+      "double_speed": false,
+      "rom_sha256": "578643f2db384879c9e89ce489b7d6abf61308a803b182e029aeb0c9ec123b90",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-2",
+      "double_speed": false,
+      "rom_sha256": "da6687108e7478e7b281b38acc1a2b575daddefbb6b93d3ad46d6bdca5b5be85",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-3",
+      "double_speed": false,
+      "rom_sha256": "262ada8ba020d627d5851b1a86e25e7a9e36caf10cbbb1ed7a4eff8f1ba51420",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-4",
+      "double_speed": false,
+      "rom_sha256": "625703d015336ac8289bf3a2ddf48e904f49dbc230b3ca25b38872f05d91ec61",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-5",
+      "double_speed": false,
+      "rom_sha256": "b1fc7ec88dcb26369ca5cb473bef40668b759b33b7dffca640285649c7d0f32d",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-6",
+      "double_speed": false,
+      "rom_sha256": "8c60ddf4633166cba79e02649ea5ba7e2e970fa845437f40626114097b5abde6",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-7",
+      "double_speed": false,
+      "rom_sha256": "c6eaf2f119c3177d2cccda7a587ff6e50c2cae1232de811a328ce64de59e2ed8",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-8",
+      "double_speed": false,
+      "rom_sha256": "f344f764edb48fe205144daed7fae018dd8ea08524abdb0ac0cf839bcbd399ff",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-9",
+      "double_speed": false,
+      "rom_sha256": "3c70ee40528e021e8eefbbcfa71d3ba0d898bcffdd046f36fe1bdf4746dc8775",
+      "before": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-10",
+      "double_speed": false,
+      "rom_sha256": "f8c3e0e3c6ed1f2f8a0d6eb4017ec20a183c9225338465ff69e7f6ea6d8252d5",
+      "before": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-11",
+      "double_speed": false,
+      "rom_sha256": "c1ce8342eea9198dcb3c6cf10244c4f55202a9acf0197bba0f7a32b2552f1a79",
+      "before": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-12",
+      "double_speed": false,
+      "rom_sha256": "35fad4836c0a08dcaf7312b9e1a8071fb76ee1d80d7ae8a6af202cb11dea5bb2",
+      "before": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-0",
+      "double_speed": false,
+      "rom_sha256": "6de4fcfd2701f1514278c31617013dc7d61e52c7ec687d8da91604d3b022ed6e",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-1",
+      "double_speed": false,
+      "rom_sha256": "64af83e7363bca4adf1fc46f8a9c83624fe2923db2bafaab8ebc68ed2aa63ef7",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-2",
+      "double_speed": false,
+      "rom_sha256": "04e5d81084161ba3482bf2217ef316f275ff758241a1a6cd4e00bfd692ca5d50",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-3",
+      "double_speed": false,
+      "rom_sha256": "02006377b967b04ceb745de74f3f252f724fbb9cdbac53fb55c54a3169efe1e6",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-4",
+      "double_speed": false,
+      "rom_sha256": "075c25c40f87ebb989e8895b878713a329e78b12b085b5d1254afacc552bd9e9",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-5",
+      "double_speed": false,
+      "rom_sha256": "55d7359a863c497ef3fa843079b9753137ed3ee7ba1e533dd9d1653b97c6192e",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-6",
+      "double_speed": false,
+      "rom_sha256": "cc5d725bcc09ae41df12d70c04ca27d0227125af4427462bbb922fb153e15229",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-7",
+      "double_speed": false,
+      "rom_sha256": "61a50a312b7a4c6b17ae6e0804393ca7b7c45a7a9e83817728507069e05041c6",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-8",
+      "double_speed": false,
+      "rom_sha256": "f011608f5160b7fdbbd896f97b0b6974ec31996c57c68a330ccb09e3d64b227e",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-9",
+      "double_speed": false,
+      "rom_sha256": "3353bdf49d779f1c511c605248ae7f07860c7cc73d67d2f1763a485e0f501868",
+      "before": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-10",
+      "double_speed": false,
+      "rom_sha256": "b2f500cd8ed5369f6e20be0de542e3f50f4c4aee3ecc03427d0091ba71f81391",
+      "before": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-11",
+      "double_speed": false,
+      "rom_sha256": "d657e754b76c1e078d713bc9d7c13b94a5d957d5890647bd2525675ca7277369",
+      "before": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-12",
+      "double_speed": false,
+      "rom_sha256": "5ffe5583e34cc74b59e8b449906839c0107c176cb1bd29e877d32791c7ae91cf",
+      "before": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-0",
+      "double_speed": false,
+      "rom_sha256": "6858718ee7f7575bd39c4efb8f1517a7e88cd891f7c1f00d99cfd705c382c5c8",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-1",
+      "double_speed": false,
+      "rom_sha256": "b3a4df6b68c0bdfc61d2a3ac981910cdd581dd84cf23c36817bfe674d6e5af30",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-2",
+      "double_speed": false,
+      "rom_sha256": "143ffb3243d27be7cb179e062edac81ad70d1c9ae4fce5503f3786c59f082586",
+      "before": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-3",
+      "double_speed": false,
+      "rom_sha256": "49ae28101dc002485d2908cfe0e91de708fac5fbb8d79ec6a0880653f5368ac0",
+      "before": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-4",
+      "double_speed": false,
+      "rom_sha256": "489fe7a13f2f9c8818886ecacbd41d0d154e2d3a73effff722f38c1504ca8b96",
+      "before": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-5",
+      "double_speed": false,
+      "rom_sha256": "2e63f3f0e4e1830d16e3e90088ad86a5cb6de3a4e6b84129f02b7d3d46b91c23",
+      "before": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-6",
+      "double_speed": false,
+      "rom_sha256": "be676e01cb8666a903438587e78792e6c5398b61ae984e4e0a42278798805a2b",
+      "before": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-7",
+      "double_speed": false,
+      "rom_sha256": "9b947dfe3384d6346099b40255b08f636c65b3d6b811ab17fbf1fdd1cfbd3c10",
+      "before": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-8",
+      "double_speed": false,
+      "rom_sha256": "6b62407f5d30b7b295b38a64ca92e906bbed14d2f16f7c0f93f60029afaab536",
+      "before": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-9",
+      "double_speed": false,
+      "rom_sha256": "606b00f331aa72a2caadcc7bd387d8574c66b154e68e886bf4756aa8c9c14849",
+      "before": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-10",
+      "double_speed": false,
+      "rom_sha256": "994269482a92096bca52af339984d1ad30d7355a7ebdce0f708783e8ab94c842",
+      "before": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        1,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-11",
+      "double_speed": false,
+      "rom_sha256": "581b1c76482e27b4774527f1248232483b61bcd55cd156d64b9a9a71f4c21d08",
+      "before": [
+        1,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        1,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        1,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-12",
+      "double_speed": false,
+      "rom_sha256": "602c840cba4a7a2780bd9d01c5d8e59e4ee8c9627d8c013a657c3be0032a9f41",
+      "before": [
+        1,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        1,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        1,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "software-phase-0",
+      "double_speed": false,
+      "rom_sha256": "8c7936288ab82d458924bf58aa41be05d638208003169f9ae3f0d854ecda97cd",
+      "before": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        90
+      ],
+      "after": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        90
+      ],
+      "reference": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        90
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "software-phase-1",
+      "double_speed": false,
+      "rom_sha256": "b94e9c16757c4f7d0e4ad603701c329696cb2f35e3c61af7591408471e019eeb",
+      "before": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        90
+      ],
+      "after": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        90
+      ],
+      "reference": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        90
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "software-phase-2",
+      "double_speed": false,
+      "rom_sha256": "679c90ad6f966269ec0a52336425e3237861a057fcbcb719486fef5c046d5bd6",
+      "before": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        90
+      ],
+      "after": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        90
+      ],
+      "reference": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        90
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "software-phase-3",
+      "double_speed": false,
+      "rom_sha256": "9c5e4ec3dab78e376415c013b91c4a16c275d5d72484b0f0047697e3fd247fea",
+      "before": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        90
+      ],
+      "after": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        90
+      ],
+      "reference": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        90
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-0",
+      "double_speed": true,
+      "rom_sha256": "7d3ec548bb1fb54ce966edacfedbf4d004639493d3b7797448de55f539cebb1b",
+      "before": [
+        0,
+        0,
+        2,
+        1,
+        3,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        3,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        3,
+        128
+      ],
+      "match_before": false,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-1",
+      "double_speed": true,
+      "rom_sha256": "650311b5eaed3bfcd6d997cdc3659053d9b058a4680d85a3ad4214f943a0c566",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        3,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        3,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        3,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-2",
+      "double_speed": true,
+      "rom_sha256": "a0a926852528e70e558cc5897a5f3d0d6ac69ce79350599445bf7003fc1d9a8e",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-3",
+      "double_speed": true,
+      "rom_sha256": "025cf362f4e1264feefbbe3e7156e7727280a2e5741604df4cc0c05357e787f1",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-4",
+      "double_speed": true,
+      "rom_sha256": "fcc6506df1c94d03930cf4baef0ba30f7a337968f1829bc2f76aae9e9538e1fc",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-5",
+      "double_speed": true,
+      "rom_sha256": "044d08aaaeefb74b5b4fc96d6f4738100869f028d54ad863929bb6be73792044",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-6",
+      "double_speed": true,
+      "rom_sha256": "ef2877a57266ecd4d5b8d93c0d32b87a5e13ded57d77cffe35f6f2f03980da80",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-7",
+      "double_speed": true,
+      "rom_sha256": "6aa285bc389a3244f62fe91f849fd723f7597dfc2fe466f1724c57f55341ee48",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": false,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-8",
+      "double_speed": true,
+      "rom_sha256": "ab083c4a2f4f477e341ea7198684cc34b7e039d29b36fad6f78c7bc285635e7f",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-9",
+      "double_speed": true,
+      "rom_sha256": "4fcf5b6107262d84ad144bc0d48bb0698885688232caddd9c7650bbf92de8b89",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-10",
+      "double_speed": true,
+      "rom_sha256": "b64c7d07d7b198f822ef1f92e8d413941ca06288e5a90f31551c529c95e85786",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-11",
+      "double_speed": true,
+      "rom_sha256": "b465add5f0b95457eefcfd8da4076c7caea0190067c106e6ee7636b730ca922a",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "if-phase-12",
+      "double_speed": true,
+      "rom_sha256": "162b7173bbdaa561c19e9a89914860afb077063012eb9f55eb7a135a1465c3eb",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-0",
+      "double_speed": true,
+      "rom_sha256": "14ac9b4da9792cc71ccf7280e2513e1ab24795da46d377b6e80175e9b5be0a6d",
+      "before": [
+        0,
+        0,
+        2,
+        1,
+        3,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        3,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        3,
+        128
+      ],
+      "match_before": false,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-1",
+      "double_speed": true,
+      "rom_sha256": "e22ffda0d93a97347f5f5cef8d417b2abddff574ecb2703983cc28c79985d353",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        3,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        3,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        3,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-2",
+      "double_speed": true,
+      "rom_sha256": "449b40bda54c9f5c16901e5b10e19c2b5fd1de12fe0ca5aaaa405c82cd91e345",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-3",
+      "double_speed": true,
+      "rom_sha256": "5b342f83599b9968b267e082bb2af6491a93eb2d778d74ae39e48da9ce5f9850",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-4",
+      "double_speed": true,
+      "rom_sha256": "cc59f4ef5742b4b61307049aa8564793a5d3c3331f1665af716bd9a3599d20c6",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-5",
+      "double_speed": true,
+      "rom_sha256": "15d9220245b87c6bfe63d3f805b9d2197f75bed83f47c84fdb31f7652711ab2f",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-6",
+      "double_speed": true,
+      "rom_sha256": "3c5938cf919f551b21d6913ae5003de86fa9231b18cdcd001129e8a8a3cb32c0",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-7",
+      "double_speed": true,
+      "rom_sha256": "2911df606b46b15a23e488f062b241bd67abb4c1b7da14c73ebeaa1e1d4c9207",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-8",
+      "double_speed": true,
+      "rom_sha256": "5634bad0d09995d70b9bcb6efb4ee7428c45a7f2547efa18c3719622ba6ab312",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-9",
+      "double_speed": true,
+      "rom_sha256": "cb0731713aab6efa7fc4e1e0effc0c73917269ba2148cd30f26e24a37c8501ea",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-10",
+      "double_speed": true,
+      "rom_sha256": "6672fb51538ea441ad6408de9e8993ba6fd5b063149b60d85809c7ff3393be86",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-11",
+      "double_speed": true,
+      "rom_sha256": "e3cd5496d4a95bab70012c019252d8e44b637fd79863cf3f9e54b3ba0ec23a6f",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "mode-phase-12",
+      "double_speed": true,
+      "rom_sha256": "a31ce9dcd1a1dca3539900f2beb15d21dac78e90429c8c63b82871fc4138ca5f",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-0",
+      "double_speed": true,
+      "rom_sha256": "229d4263d3c7e55047a1dda71442d0115780133fda77ef92797e7c989566ad71",
+      "before": [
+        0,
+        0,
+        2,
+        1,
+        3,
+        128
+      ],
+      "after": [
+        0,
+        0,
+        2,
+        1,
+        3,
+        128
+      ],
+      "reference": [
+        0,
+        0,
+        2,
+        1,
+        3,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-1",
+      "double_speed": true,
+      "rom_sha256": "26aefd1f570ac2d03e7623012bb371be4b8a799873f7a37ca02875b696aba693",
+      "before": [
+        0,
+        0,
+        2,
+        1,
+        3,
+        128
+      ],
+      "after": [
+        0,
+        0,
+        2,
+        1,
+        3,
+        128
+      ],
+      "reference": [
+        0,
+        0,
+        2,
+        1,
+        3,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-2",
+      "double_speed": true,
+      "rom_sha256": "430a69968ca4795cd009b422abdc6bb4481b7c5c546b576341708a7e3fec5884",
+      "before": [
+        0,
+        0,
+        2,
+        1,
+        3,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        3,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        3,
+        128
+      ],
+      "match_before": false,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-3",
+      "double_speed": true,
+      "rom_sha256": "9eeef9d481f117b19e0518ad68b46520b5c9f9ce738b03ba7264bd7716bc9252",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        3,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        3,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        3,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-4",
+      "double_speed": true,
+      "rom_sha256": "eb5750e5ab4d6359a431c0f999bd6140eccfe28c04feb5972844b12c68fc17b0",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-5",
+      "double_speed": true,
+      "rom_sha256": "6029e50875f541079a85d6bcb6576d7b142cb6858a12cbbf11f3a57fa385ecf1",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-6",
+      "double_speed": true,
+      "rom_sha256": "9d84a31568298a2170c39e26ada13690b48172515c87dd3a6967f7e7956c2402",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-7",
+      "double_speed": true,
+      "rom_sha256": "befc3d691e4900aead96331818a60584de8181a498888431ebda7a67937dca8e",
+      "before": [
+        1,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        1,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        1,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-8",
+      "double_speed": true,
+      "rom_sha256": "171cc7f17c715f95ddfbbf3cf89ecd7d18ecb935e4e1bfbd8a3bb2dbe6030eea",
+      "before": [
+        1,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        1,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        1,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-9",
+      "double_speed": true,
+      "rom_sha256": "84f31e93cbec898cff8880e2ff873c6163ba7367043813f3a81905e8f31b2ce9",
+      "before": [
+        1,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        1,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        1,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-10",
+      "double_speed": true,
+      "rom_sha256": "488a5bad9ea60cfb180058aa5f4b96415187de33de31f4c83ec0a3308ed13ed1",
+      "before": [
+        1,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        1,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        1,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-11",
+      "double_speed": true,
+      "rom_sha256": "e384083158133639900e2c30bed5a3f96c02d2cc2a178b6624a6ba8cde20213e",
+      "before": [
+        1,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        1,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        1,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "ly-phase-12",
+      "double_speed": true,
+      "rom_sha256": "2eeca916168cc82b97a8ebf4a3667aad8099cef659a03840131fca7967bdb1e5",
+      "before": [
+        1,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        1,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        1,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "software-phase-0",
+      "double_speed": true,
+      "rom_sha256": "1e73b21a95cd4c4c56d71f8ba03fce4196b50f34576b95fdcda96a69f8307233",
+      "before": [
+        0,
+        0,
+        0,
+        0,
+        128,
+        90
+      ],
+      "after": [
+        0,
+        0,
+        0,
+        0,
+        128,
+        90
+      ],
+      "reference": [
+        0,
+        0,
+        0,
+        0,
+        128,
+        90
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "software-phase-1",
+      "double_speed": true,
+      "rom_sha256": "98b5b970e5f9dd4294a9c3cf7e99192e26993527519df1234f74131574b9e18a",
+      "before": [
+        0,
+        0,
+        0,
+        0,
+        128,
+        90
+      ],
+      "after": [
+        0,
+        0,
+        0,
+        0,
+        128,
+        90
+      ],
+      "reference": [
+        0,
+        0,
+        0,
+        0,
+        128,
+        90
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "software-phase-2",
+      "double_speed": true,
+      "rom_sha256": "4f230733c1ae20b0a4e704c3936577d9a451ea2bf21ef01f21bc3bccce4ccd60",
+      "before": [
+        0,
+        0,
+        0,
+        0,
+        128,
+        90
+      ],
+      "after": [
+        0,
+        0,
+        0,
+        0,
+        128,
+        90
+      ],
+      "reference": [
+        0,
+        0,
+        0,
+        0,
+        128,
+        90
+      ],
+      "match_before": true,
+      "match_after": true
+    },
+    {
+      "scenario": "software-phase-3",
+      "double_speed": true,
+      "rom_sha256": "ae973c0b88a4a35a9a24cf23f0526224c45b7168b2a6f54ee32104a80a3a448b",
+      "before": [
+        0,
+        0,
+        0,
+        0,
+        128,
+        90
+      ],
+      "after": [
+        0,
+        0,
+        0,
+        0,
+        128,
+        90
+      ],
+      "reference": [
+        0,
+        0,
+        0,
+        0,
+        128,
+        90
+      ],
+      "match_before": true,
+      "match_after": true
+    }
+  ],
+  "limits": [
+    "Owned authored ROMs and GBB boot only; no private reference inputs are required.",
+    "CPU NOP/read witnesses are not hardware edge timestamps.",
+    "Normal-speed LCD-startup STAT IRQ counters remain discrepant in the separate 48-comparison probe.",
+    "No CPU/PPU mode-edge offset or screenshot baseline was fitted or approved."
+  ]
+}

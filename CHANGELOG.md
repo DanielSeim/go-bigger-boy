@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Preserve fractional double-speed peripheral clocks across split bus ticks.
+  IF reads no longer lose a PPU/cartridge clock in their `3 + 1` CPU-cycle
+  split. The existing saved normalized clock carries the phase. Add an
+  authored STAT request/read phase sweep and software-interrupt controls.
+
 - Add authored CGB LCD-enable polling and interrupt comparisons, with repeated
   normal/double-speed captures and frozen event logs. Preserve the remaining
   normal-speed STAT interrupt counter mismatch as an explicit research failure.
