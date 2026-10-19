@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add authored CGB LCD-enable polling and interrupt comparisons, with repeated
+  normal/double-speed captures and frozen event logs. Preserve the remaining
+  normal-speed STAT interrupt counter mismatch as an explicit research failure.
+
 - Correct native CGB post-boot DE/HL registers to match the independently
   checked boot handoff, including reset and save-state restoration.
 

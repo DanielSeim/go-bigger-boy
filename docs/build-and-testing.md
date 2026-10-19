@@ -333,6 +333,27 @@ reference parity. See the guide for the first timer-phase divergence.
 matched-cost SCX controls and IME-disabled STAT polling. Its measured normal-speed
 pending-timer distinction and separate double-speed observations remain research
 findings, documented in the same guide.
+`gameboy_cgb_lcd_startup_probe_contract` checks a separate authored LCD-enable
+producer, request polling versus IRQ acknowledgement, speed witnesses, and frozen
+two-event logs. Its optional paired reference run is:
+
+```sh
+python3 scripts/cgb_lcd_startup_probe.py \
+  --runner build/gbb_test_runner --sameboy-capture /path/to/sameboy-capture \
+  --output /path/to/new-lcd-startup-results
+```
+
+Build the adapter against the pinned SameBoy Core as described in the
+[reference guide](gbvisualizer-reference.md). The probe supplies the original
+GBB boot image and authored cartridges; no proprietary inputs are needed.
+Twenty-four cartridges cover VBlank/STAT, polling/IRQ, both speeds and three
+pre-enable NOP delays. Frame checkpoints 4 and 8 must contain the same frozen
+WRAM log, with two takes per core. These are completed PPU-frame checkpoints,
+not `--cycle-frame-capture` intervals. The current paired run returns exit 1:
+42 of 48 event comparisons match; normal-speed STAT IRQ counters differ.
+This research failure is retained separately from the passing offline tooling
+contract. See [accuracy](accuracy.md) for the measured scope and limits.
+
 `gameboy_cgb_reti_dispatch_probe_contract` adds software-requested RETI/RET/EI
 phase sweeps and an equal-cost direct-call control. These exposed and verify a
 CGB timer-entry clock correction; the guide distinguishes the now-matching

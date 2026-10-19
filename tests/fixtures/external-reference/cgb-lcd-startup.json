@@ -1,0 +1,1241 @@
+{
+  "schema": "gbb-cgb-lcd-startup-evidence-v1",
+  "qualification": false,
+  "date": "2026-10-19",
+  "sameboy_commit": "208ba4afabffab9edde416f2dbb8ae459e34adb8",
+  "sameboy_library_sha256": "1ba66d2d813d99267b1be27cbc4642d624bbb8c7370e881546b1223bec3cf9fb",
+  "runner_sha256": "587d9f49977725046e374a4f71c0ec05fbbc2e4688b41b53253876815b06c991",
+  "adapter_sha256": "ccc958008c9d29fc5bee4b39d1c02bd0a48b5d7cdfd58e1a605bc9d5405aae10",
+  "boot_sha256": "c8937124cd7dcafc036dcad3ad46008ea57b4e76abfa3da6012ff8bdbd7687d0",
+  "probe_sha256": "ad2ccc2372b3bf018ec67b08baf746d0e76177366f284ce27071d99acb540690",
+  "adapter_source_sha256": "8d0337dde4ffbc501ec36e417024060c99cee663129c10fb6ad06151213f6ed0",
+  "summary": {
+    "roms": 24,
+    "comparisons": 48,
+    "matches": 42,
+    "mismatches": 6,
+    "all_repeatable": true,
+    "all_authored_constraints_match": true,
+    "all_logs_frozen": true,
+    "paired_cli_exit": 1
+  },
+  "scope": "LCD-off to first two PPU conditions or IRQs; counters are workload witnesses, not physical edge timestamps",
+  "event_fields": [
+    "work_bc_high",
+    "work_bc_low",
+    "ly",
+    "stat_mode",
+    "if_low2",
+    "div",
+    "key1_speed"
+  ],
+  "rows": [
+    {
+      "scenario": "vblank-poll-pad0",
+      "double_speed": false,
+      "rom_sha256": "fd2e12aa01b8c173054c6d380b674f498426ce00acfd88ce40ce79b90b403563",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": true,
+      "gbb_events": [
+        [
+          6,
+          106,
+          144,
+          1,
+          1,
+          1,
+          0
+        ],
+        [
+          13,
+          58,
+          144,
+          1,
+          1,
+          19,
+          0
+        ]
+      ],
+      "sameboy_events": [
+        [
+          6,
+          106,
+          144,
+          1,
+          1,
+          1,
+          0
+        ],
+        [
+          13,
+          58,
+          144,
+          1,
+          1,
+          19,
+          0
+        ]
+      ]
+    },
+    {
+      "scenario": "vblank-poll-pad1",
+      "double_speed": false,
+      "rom_sha256": "b6921305017cdf18bb3351fc8d64e4f0d4b457dfab0890af45879106ca62d2ab",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": true,
+      "gbb_events": [
+        [
+          6,
+          106,
+          144,
+          1,
+          1,
+          1,
+          0
+        ],
+        [
+          13,
+          58,
+          144,
+          1,
+          1,
+          19,
+          0
+        ]
+      ],
+      "sameboy_events": [
+        [
+          6,
+          106,
+          144,
+          1,
+          1,
+          1,
+          0
+        ],
+        [
+          13,
+          58,
+          144,
+          1,
+          1,
+          19,
+          0
+        ]
+      ]
+    },
+    {
+      "scenario": "vblank-poll-pad57",
+      "double_speed": false,
+      "rom_sha256": "df62fa3f49b8d4e67640d8237d2b30c8222c5fc73b9298f5d16f11f1b0976795",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": true,
+      "gbb_events": [
+        [
+          6,
+          106,
+          144,
+          1,
+          1,
+          2,
+          0
+        ],
+        [
+          13,
+          58,
+          144,
+          1,
+          1,
+          20,
+          0
+        ]
+      ],
+      "sameboy_events": [
+        [
+          6,
+          106,
+          144,
+          1,
+          1,
+          2,
+          0
+        ],
+        [
+          13,
+          58,
+          144,
+          1,
+          1,
+          20,
+          0
+        ]
+      ]
+    },
+    {
+      "scenario": "vblank-irq-pad0",
+      "double_speed": false,
+      "rom_sha256": "b1000c8e3ba47bbd0e719b1b006becd73991ca08890692c22bc0131ea9784593",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": true,
+      "gbb_events": [
+        [
+          9,
+          41,
+          144,
+          1,
+          0,
+          1,
+          0
+        ],
+        [
+          18,
+          237,
+          144,
+          1,
+          0,
+          19,
+          0
+        ]
+      ],
+      "sameboy_events": [
+        [
+          9,
+          41,
+          144,
+          1,
+          0,
+          1,
+          0
+        ],
+        [
+          18,
+          237,
+          144,
+          1,
+          0,
+          19,
+          0
+        ]
+      ]
+    },
+    {
+      "scenario": "vblank-irq-pad1",
+      "double_speed": false,
+      "rom_sha256": "656dbde2b26600afa44a0f0eb07be233b97d6808cff177eb2f6090f60ac9a946",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": true,
+      "gbb_events": [
+        [
+          9,
+          41,
+          144,
+          1,
+          0,
+          1,
+          0
+        ],
+        [
+          18,
+          237,
+          144,
+          1,
+          0,
+          19,
+          0
+        ]
+      ],
+      "sameboy_events": [
+        [
+          9,
+          41,
+          144,
+          1,
+          0,
+          1,
+          0
+        ],
+        [
+          18,
+          237,
+          144,
+          1,
+          0,
+          19,
+          0
+        ]
+      ]
+    },
+    {
+      "scenario": "vblank-irq-pad57",
+      "double_speed": false,
+      "rom_sha256": "230ef911349cc8674dce33016d9824b3a04b5f897248f516110fd64461b1f866",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": true,
+      "gbb_events": [
+        [
+          9,
+          41,
+          144,
+          1,
+          0,
+          2,
+          0
+        ],
+        [
+          18,
+          237,
+          144,
+          1,
+          0,
+          20,
+          0
+        ]
+      ],
+      "sameboy_events": [
+        [
+          9,
+          41,
+          144,
+          1,
+          0,
+          2,
+          0
+        ],
+        [
+          18,
+          237,
+          144,
+          1,
+          0,
+          20,
+          0
+        ]
+      ]
+    },
+    {
+      "scenario": "stat-poll-pad0",
+      "double_speed": false,
+      "rom_sha256": "4090f0ba3642970142903865054e267068a597881f9be14f0332a805592ee406",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": true,
+      "gbb_events": [
+        [
+          0,
+          11,
+          1,
+          3,
+          2,
+          2,
+          0
+        ],
+        [
+          0,
+          14,
+          2,
+          3,
+          2,
+          4,
+          0
+        ]
+      ],
+      "sameboy_events": [
+        [
+          0,
+          11,
+          1,
+          3,
+          2,
+          2,
+          0
+        ],
+        [
+          0,
+          14,
+          2,
+          3,
+          2,
+          4,
+          0
+        ]
+      ]
+    },
+    {
+      "scenario": "stat-poll-pad1",
+      "double_speed": false,
+      "rom_sha256": "4f8885b346678e2e9116888b5a4cc62be61fa148fd74c4fa946e312d85e5398e",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": true,
+      "gbb_events": [
+        [
+          0,
+          11,
+          1,
+          3,
+          2,
+          2,
+          0
+        ],
+        [
+          0,
+          14,
+          2,
+          3,
+          2,
+          4,
+          0
+        ]
+      ],
+      "sameboy_events": [
+        [
+          0,
+          11,
+          1,
+          3,
+          2,
+          2,
+          0
+        ],
+        [
+          0,
+          14,
+          2,
+          3,
+          2,
+          4,
+          0
+        ]
+      ]
+    },
+    {
+      "scenario": "stat-poll-pad57",
+      "double_speed": false,
+      "rom_sha256": "9c24d1f35a6f9cf4b6ce8de6a0a83dccbc63cd2af82235437de501e9f09545ed",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": true,
+      "gbb_events": [
+        [
+          0,
+          11,
+          1,
+          3,
+          2,
+          3,
+          0
+        ],
+        [
+          0,
+          14,
+          2,
+          3,
+          2,
+          5,
+          0
+        ]
+      ],
+      "sameboy_events": [
+        [
+          0,
+          11,
+          1,
+          3,
+          2,
+          3,
+          0
+        ],
+        [
+          0,
+          14,
+          2,
+          3,
+          2,
+          5,
+          0
+        ]
+      ]
+    },
+    {
+      "scenario": "stat-irq-pad0",
+      "double_speed": false,
+      "rom_sha256": "2e97ab85485906d9d34f455d9931807841a573b7ac01a0416c73809ed1635ee2",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": false,
+      "gbb_events": [
+        [
+          0,
+          17,
+          1,
+          3,
+          0,
+          2,
+          0
+        ],
+        [
+          0,
+          25,
+          2,
+          3,
+          0,
+          4,
+          0
+        ]
+      ],
+      "sameboy_events": [
+        [
+          0,
+          16,
+          1,
+          3,
+          0,
+          2,
+          0
+        ],
+        [
+          0,
+          24,
+          2,
+          3,
+          0,
+          4,
+          0
+        ]
+      ]
+    },
+    {
+      "scenario": "stat-irq-pad1",
+      "double_speed": false,
+      "rom_sha256": "cfa30e9a239db7cabf0c1865eb683be18e4e1852dcfdd6c6af69725cd4f19193",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": false,
+      "gbb_events": [
+        [
+          0,
+          17,
+          1,
+          3,
+          0,
+          2,
+          0
+        ],
+        [
+          0,
+          25,
+          2,
+          3,
+          0,
+          4,
+          0
+        ]
+      ],
+      "sameboy_events": [
+        [
+          0,
+          16,
+          1,
+          3,
+          0,
+          2,
+          0
+        ],
+        [
+          0,
+          24,
+          2,
+          3,
+          0,
+          4,
+          0
+        ]
+      ]
+    },
+    {
+      "scenario": "stat-irq-pad57",
+      "double_speed": false,
+      "rom_sha256": "8aa4d7e1675668c64f56d46bd3e77e4d4aeb5e1b4ccfe7304611dd739cce911c",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": false,
+      "gbb_events": [
+        [
+          0,
+          17,
+          1,
+          3,
+          0,
+          3,
+          0
+        ],
+        [
+          0,
+          25,
+          2,
+          3,
+          0,
+          5,
+          0
+        ]
+      ],
+      "sameboy_events": [
+        [
+          0,
+          16,
+          1,
+          3,
+          0,
+          3,
+          0
+        ],
+        [
+          0,
+          24,
+          2,
+          3,
+          0,
+          5,
+          0
+        ]
+      ]
+    },
+    {
+      "scenario": "vblank-poll-pad0",
+      "double_speed": true,
+      "rom_sha256": "21d6490e2f1d3e8408976b9768213c1d15871f03beffe9c8dc4eadb51509d969",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": true,
+      "gbb_events": [
+        [
+          12,
+          212,
+          144,
+          1,
+          1,
+          1,
+          128
+        ],
+        [
+          26,
+          116,
+          144,
+          1,
+          1,
+          38,
+          128
+        ]
+      ],
+      "sameboy_events": [
+        [
+          12,
+          212,
+          144,
+          1,
+          1,
+          1,
+          128
+        ],
+        [
+          26,
+          116,
+          144,
+          1,
+          1,
+          38,
+          128
+        ]
+      ]
+    },
+    {
+      "scenario": "vblank-poll-pad1",
+      "double_speed": true,
+      "rom_sha256": "cabdcd776a648c1fa98c3b196d24967a04cf846833fb3eb46f79f3c5da16f80d",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": true,
+      "gbb_events": [
+        [
+          12,
+          212,
+          144,
+          1,
+          1,
+          1,
+          128
+        ],
+        [
+          26,
+          116,
+          144,
+          1,
+          1,
+          38,
+          128
+        ]
+      ],
+      "sameboy_events": [
+        [
+          12,
+          212,
+          144,
+          1,
+          1,
+          1,
+          128
+        ],
+        [
+          26,
+          116,
+          144,
+          1,
+          1,
+          38,
+          128
+        ]
+      ]
+    },
+    {
+      "scenario": "vblank-poll-pad57",
+      "double_speed": true,
+      "rom_sha256": "2d10dfc15a2e399039113424691a58d38732d5ffe5ca657c3fe2bd7a24f8eb42",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": true,
+      "gbb_events": [
+        [
+          12,
+          212,
+          144,
+          1,
+          1,
+          2,
+          128
+        ],
+        [
+          26,
+          116,
+          144,
+          1,
+          1,
+          39,
+          128
+        ]
+      ],
+      "sameboy_events": [
+        [
+          12,
+          212,
+          144,
+          1,
+          1,
+          2,
+          128
+        ],
+        [
+          26,
+          116,
+          144,
+          1,
+          1,
+          39,
+          128
+        ]
+      ]
+    },
+    {
+      "scenario": "vblank-irq-pad0",
+      "double_speed": true,
+      "rom_sha256": "589ae2e8541060cd37d851e5e1c4d22aa4eab376f4c62d6a7609dff49ac95121",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": true,
+      "gbb_events": [
+        [
+          18,
+          82,
+          144,
+          1,
+          0,
+          1,
+          128
+        ],
+        [
+          37,
+          226,
+          144,
+          1,
+          0,
+          38,
+          128
+        ]
+      ],
+      "sameboy_events": [
+        [
+          18,
+          82,
+          144,
+          1,
+          0,
+          1,
+          128
+        ],
+        [
+          37,
+          226,
+          144,
+          1,
+          0,
+          38,
+          128
+        ]
+      ]
+    },
+    {
+      "scenario": "vblank-irq-pad1",
+      "double_speed": true,
+      "rom_sha256": "6b542d72e600a6c766ac6006b7d4ed0cd8f08333a370e8a0c3b947e5a05d7b62",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": true,
+      "gbb_events": [
+        [
+          18,
+          82,
+          144,
+          1,
+          0,
+          1,
+          128
+        ],
+        [
+          37,
+          226,
+          144,
+          1,
+          0,
+          38,
+          128
+        ]
+      ],
+      "sameboy_events": [
+        [
+          18,
+          82,
+          144,
+          1,
+          0,
+          1,
+          128
+        ],
+        [
+          37,
+          226,
+          144,
+          1,
+          0,
+          38,
+          128
+        ]
+      ]
+    },
+    {
+      "scenario": "vblank-irq-pad57",
+      "double_speed": true,
+      "rom_sha256": "5cf167c56bc4fd601fd65e9c692142153864fb405a1a4837653ecd1953d71c05",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": true,
+      "gbb_events": [
+        [
+          18,
+          82,
+          144,
+          1,
+          0,
+          2,
+          128
+        ],
+        [
+          37,
+          226,
+          144,
+          1,
+          0,
+          39,
+          128
+        ]
+      ],
+      "sameboy_events": [
+        [
+          18,
+          82,
+          144,
+          1,
+          0,
+          2,
+          128
+        ],
+        [
+          37,
+          226,
+          144,
+          1,
+          0,
+          39,
+          128
+        ]
+      ]
+    },
+    {
+      "scenario": "stat-poll-pad0",
+      "double_speed": true,
+      "rom_sha256": "93b7a13538d56e64f691c6210e8d43374247795c53d8d63cc9c720f5691bb6c6",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": true,
+      "gbb_events": [
+        [
+          0,
+          20,
+          1,
+          2,
+          2,
+          4,
+          128
+        ],
+        [
+          0,
+          33,
+          2,
+          2,
+          2,
+          8,
+          128
+        ]
+      ],
+      "sameboy_events": [
+        [
+          0,
+          20,
+          1,
+          2,
+          2,
+          4,
+          128
+        ],
+        [
+          0,
+          33,
+          2,
+          2,
+          2,
+          8,
+          128
+        ]
+      ]
+    },
+    {
+      "scenario": "stat-poll-pad1",
+      "double_speed": true,
+      "rom_sha256": "5b50758aba003f0a6e6b54ef9d3bab609204159e934eefc5f2988ec6bd97d012",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": true,
+      "gbb_events": [
+        [
+          0,
+          20,
+          1,
+          2,
+          2,
+          4,
+          128
+        ],
+        [
+          0,
+          33,
+          2,
+          2,
+          2,
+          8,
+          128
+        ]
+      ],
+      "sameboy_events": [
+        [
+          0,
+          20,
+          1,
+          2,
+          2,
+          4,
+          128
+        ],
+        [
+          0,
+          33,
+          2,
+          2,
+          2,
+          8,
+          128
+        ]
+      ]
+    },
+    {
+      "scenario": "stat-poll-pad57",
+      "double_speed": true,
+      "rom_sha256": "7d9e7bb5467c1537315c34c80de4f01f2571539c86a1c7d06775e3b26c9bcd18",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": true,
+      "gbb_events": [
+        [
+          0,
+          20,
+          1,
+          2,
+          2,
+          5,
+          128
+        ],
+        [
+          0,
+          33,
+          2,
+          2,
+          2,
+          8,
+          128
+        ]
+      ],
+      "sameboy_events": [
+        [
+          0,
+          20,
+          1,
+          2,
+          2,
+          5,
+          128
+        ],
+        [
+          0,
+          33,
+          2,
+          2,
+          2,
+          8,
+          128
+        ]
+      ]
+    },
+    {
+      "scenario": "stat-irq-pad0",
+      "double_speed": true,
+      "rom_sha256": "5e10265f0adb6380673ec5a1557be0277bb719e8cbdc2763b99f331b3764e0d6",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": true,
+      "gbb_events": [
+        [
+          0,
+          33,
+          1,
+          2,
+          0,
+          4,
+          128
+        ],
+        [
+          0,
+          57,
+          2,
+          2,
+          0,
+          7,
+          128
+        ]
+      ],
+      "sameboy_events": [
+        [
+          0,
+          33,
+          1,
+          2,
+          0,
+          4,
+          128
+        ],
+        [
+          0,
+          57,
+          2,
+          2,
+          0,
+          7,
+          128
+        ]
+      ]
+    },
+    {
+      "scenario": "stat-irq-pad1",
+      "double_speed": true,
+      "rom_sha256": "c74ec4cb085127ea4e25640abf8e4cdc02422a8724c05d9aa33fcd07da6e7ab9",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": true,
+      "gbb_events": [
+        [
+          0,
+          33,
+          1,
+          2,
+          0,
+          4,
+          128
+        ],
+        [
+          0,
+          57,
+          2,
+          2,
+          0,
+          7,
+          128
+        ]
+      ],
+      "sameboy_events": [
+        [
+          0,
+          33,
+          1,
+          2,
+          0,
+          4,
+          128
+        ],
+        [
+          0,
+          57,
+          2,
+          2,
+          0,
+          7,
+          128
+        ]
+      ]
+    },
+    {
+      "scenario": "stat-irq-pad57",
+      "double_speed": true,
+      "rom_sha256": "c4551f771d03b5f4131cf2cd08990aa5ff0a89a1b0f25fdae75af47c07d605e2",
+      "checkpoints": [
+        4,
+        8
+      ],
+      "both_checkpoints_match": true,
+      "gbb_events": [
+        [
+          0,
+          33,
+          1,
+          2,
+          0,
+          5,
+          128
+        ],
+        [
+          0,
+          57,
+          2,
+          2,
+          0,
+          8,
+          128
+        ]
+      ],
+      "sameboy_events": [
+        [
+          0,
+          33,
+          1,
+          2,
+          0,
+          5,
+          128
+        ],
+        [
+          0,
+          57,
+          2,
+          2,
+          0,
+          8,
+          128
+        ]
+      ]
+    }
+  ],
+  "limits": [
+    "Only independently authored ROMs and the owned GBB CGB boot are used. No private cartridge/firmware inputs are required.",
+    "Completed PPU frame anchors include boot, never CPU-cycle-frame intervals.",
+    "The BC counter measures completed workload increments, not a hardware interrupt-edge clock.",
+    "Matching polling samples do not establish cycle-exact request timing; the normal-speed STAT discrepancy remains unqualified.",
+    "No CPU/PPU timing or private screenshot baseline has been changed."
+  ]
+}

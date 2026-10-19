@@ -868,6 +868,39 @@ not establish identical undefined RAM contents or every peripheral phase.
 No fitted frame/time shift or CPU timing
 adjustment is accepted as a consequence of the register correction.
 
+The independent `cgb_lcd_startup_probe.py` now narrows that investigation with
+24 authored cartridges. Each disables LCD/APU/timer/interrupts, clears its WRAM
+log, selects normal or double speed, and resets DIV before enabling `LCDC=87`.
+It observes the first two VBlanks or mode-2 conditions either by polling with
+IE/IME disabled or by an interrupt handler. The shared logger records a BC work
+counter, LY, STAT mode, IF low bits, DIV and KEY1 speed. Handler/logging time is
+part of the workload; these are not physical edge timestamps. Three pre-enable
+NOP delays vary the DIV phase without fitting an offset between cores.
+
+The pinned reference comparison repeats every capture twice and checks the
+frozen log at completed PPU frames 4 and 8:
+
+| Observation | Normal speed | Double speed |
+| --- | --- | --- |
+| VBlank polling | 6/6 match | 6/6 match |
+| VBlank IRQ | 6/6 match | 6/6 match |
+| STAT mode-2 polling | 6/6 match | 6/6 match |
+| STAT mode-2 IRQ | 0/6 match | 6/6 match |
+
+All 48 comparisons repeat and satisfy the authored completion, LY/mode,
+request/acknowledgement and speed constraints; all logs remain frozen. In the
+normal-speed STAT IRQ cases, GBB records BC counters 17/25 while the reference
+records 16/24, across all three delays and both checkpoints. Other recorded
+fields agree. The tool therefore returns failure, with `qualification=false`;
+its offline tooling tests do not certify reference parity. Evidence and source
+fingerprints are in
+[`cgb-lcd-startup.json`](../tests/fixtures/external-reference/cgb-lcd-startup.json).
+Polling agreement at this sampling granularity does not prove identical
+request-edge timing. Next distinguish a first mode-2 request-edge shift from
+CPU interrupt-recognition timing with a finer request/dispatch phase sweep.
+No CPU/PPU timing, commercial screenshot baseline or release gate changes are
+made on the strength of this counter difference.
+
 DIV/APU edges are dispatched at their timer-cycle boundary rather than being
 queued until the end of a bus batch. The APU also models the hardware rule that
 enabling it while the DIV/APU input is high skips the first falling-edge event;
