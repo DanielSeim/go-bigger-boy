@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Correct native CGB CPU VRAM handoff on ordinary lines and palette-data sampling. Preserve
+  instruction clocks, blocked-write palette index increments and diagnostic IO
+  traces; validate access boundaries across CGB0/CGB-C/CGB-E with save/load controls.
+
 - Add combined native CGB-E pixel-output and CPU-executed VRAM/palette access
   witnesses. Record ten boundary discrepancies, equal-cost padding controls and
   snapshot-state checks without changing production timing or release baselines.

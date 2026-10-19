@@ -123,7 +123,19 @@ class PixelAccessContracts(unittest.TestCase):
                         if interval is not None:
                             self.assertEqual(len(interval), 2)
                             self.assertLess(interval[0], interval[1])
-        self.assertEqual(sum(row['architectural_match'] for row in rows), 166)
+        self.assertEqual(sum(row['architectural_match'] for row in rows), 176)
+        self.assertEqual(evidence['historical_before']['summary']['architectural_matches'], 166)
+        self.assertEqual(len(evidence['historical_before']['mismatching_rows']), 10)
+        negative = evidence['retained_correction']['negative_regression_control']
+        self.assertEqual(negative['old_core_exit_code'], 1)
+        self.assertEqual(negative['failed_assertions'], negative['native_read_assertions'] +
+                         negative['native_write_assertions'] + negative['io_trace_assertions'])
+        model_rows = evidence['retained_correction']['cross_model_controls']['rows']
+        self.assertEqual(len(model_rows), 352)
+        for model in ('cgb0', 'cgb-c'):
+            selected = [r for r in model_rows if r['model'] == model]
+            self.assertEqual({r['scenario'] for r in selected}, set(cases))
+            self.assertTrue(all(r['match'] and r['values']['gbb'] == r['values']['sameboy'] for r in selected))
         quiet = evidence['rejected_quiet_calibration']
         self.assertFalse(quiet['accepted'])
         self.assertEqual(quiet['rom_sha256'], hashlib.sha256(probe.quiet_calibration_rom()).hexdigest())
@@ -151,6 +163,27 @@ class PixelAccessContracts(unittest.TestCase):
         self.assertTrue(probe.passes(changed))
         changed['rows'][0]['captures']['gbb']['snapshot_equivalent'] = False
         self.assertFalse(probe.passes(changed))
+
+    def test_startup_control_evidence_has_no_new_access_regressions(self):
+        evidence = json.loads((ROOT / 'tests/fixtures/external-reference/cgb-pixel-access.json').read_text())
+        controls = evidence['retained_correction']['startup_controls']
+        cases = {c['name']: c for c in probe.startup_scenarios()}
+        self.assertEqual(len(cases), 176)
+        rows = controls['rows']
+        self.assertEqual({r['case']['name'] for r in rows}, set(cases))
+        self.assertEqual(len(rows), 176)
+        for row in rows:
+            case = cases[row['case']['name']]
+            self.assertEqual(row['rom_sha256'], hashlib.sha256(probe.probe_rom(case)).hexdigest())
+            self.assertEqual(row['match'], row['values']['gbb'] == row['values']['sameboy'])
+            self.assertEqual(row['previous_match'], row['values']['before'] == row['values']['sameboy'])
+            self.assertFalse(row['previous_match'] and not row['match'])
+        self.assertEqual(sum(r['previous_match'] for r in rows), 166)
+        self.assertEqual(sum(r['match'] for r in rows), 174)
+        remaining = [r for r in rows if not r['match']]
+        self.assertEqual({r['case']['name'] for r in remaining},
+                         {'normal-start-vram-read-startup-pad12',
+                          'normal-start-vram-write-startup-pad12'})
 
 
 if __name__ == '__main__':

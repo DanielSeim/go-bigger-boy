@@ -708,6 +708,13 @@ void Cpu::idle_without_timer(MemoryBus& bus, const unsigned cycles) noexcept {
 }
 
 std::uint8_t Cpu::read8(MemoryBus& bus, const std::uint16_t address) noexcept {
+    if (bus.cgb_mode_ && (address == 0xFF69 || address == 0xFF6B)) {
+        // Native palette data is sampled before the last machine cycle.
+        // Keep its clocks, DMA arbitration and instruction duration intact.
+        const auto value = bus.cpu_read8(address);
+        idle(bus, 4);
+        return value;
+    }
     // IF is sampled before the final T-cycle's STAT edge. Preserve the normal
     // final-cycle value for ordinary reads, but retain the pre-edge value when
     // a STAT request was raised by that final cycle.
@@ -733,6 +740,11 @@ std::uint8_t Cpu::read8(MemoryBus& bus, const std::uint16_t address) noexcept {
 
 void Cpu::write8(MemoryBus& bus, const std::uint16_t address,
                  const std::uint8_t value) noexcept {
+    if (bus.cgb_mode_ && (address == 0xFF69 || address == 0xFF6B)) {
+        bus.cpu_write8(address, value);
+        idle(bus, 4);
+        return;
+    }
     idle(bus, 4);
     bus.cpu_write8(address, value);
 }

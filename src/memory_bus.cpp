@@ -332,12 +332,23 @@ std::uint8_t MemoryBus::cpu_read8(const std::uint16_t address) const noexcept {
         // byte on the next DMA machine cycle; raw/debug reads stay unaffected.
         return read8(static_cast<std::uint16_t>(oam_dma_source_ + oam_dma_index_));
     }
+    if (cgb_mode_ && (address == 0xFF69 || address == 0xFF6B)) {
+        return ppu_.cpu_read_palette(address, double_speed_);
+    }
+    if (address >= 0x8000 && address <= 0x9FFF) return ppu_.cpu_read_vram(address);
     return read8(address);
 }
 
 void MemoryBus::cpu_write8(const std::uint16_t address,
                            const std::uint8_t value) noexcept {
     if (address != 0xFF46 && oam_dma_blocks(address)) return;
+    if (cgb_mode_ && (address == 0xFF69 || address == 0xFF6B)) {
+        trace_io_write(address, value);
+        if (ppu_.cpu_write_palette(address, value, double_speed_, debug_bus_cycles_)) {
+            request_interrupt(1);
+        }
+        return;
+    }
     if (address == 0xFF07) {
         timer_.write_control(value, true);
         return;
@@ -372,7 +383,7 @@ bool MemoryBus::oam_dma_blocks(const std::uint16_t address) const noexcept {
     return source_is_wram == target_is_wram;
 }
 
-void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) noexcept {
+void MemoryBus::trace_io_write(const std::uint16_t address, const std::uint8_t value) noexcept {
     if (debug_io_trace_enabled_ && address >= 0xFF00 && address <= 0xFF7F) {
         debug_io_trace_.push_back(IoTraceEvent{
             debug_bus_cycles_, address, value,
@@ -384,6 +395,10 @@ void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) no
                                   debug_io_trace_.begin() + 4096);
         }
     }
+}
+
+void MemoryBus::write8(const std::uint16_t address, const std::uint8_t value) noexcept {
+    trace_io_write(address, value);
     if (address <= 0x7FFF || (address >= 0xA000 && address <= 0xBFFF)) {
         cartridge_.write(address, value);
     } else if (address <= 0x9FFF) {

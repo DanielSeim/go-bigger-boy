@@ -26,8 +26,19 @@ def operation_pc(case, polling=True):
     return 0x2000 + (case['pad']//3*2 + case['pad']%3 if polling else case['pad']) + 2
 
 
+def startup_scenarios():
+    """Shift the same CPU schedule from ordinary line one onto startup line zero."""
+    cases = []
+    for case in scenarios():
+        pad = case['pad'] - (226 if case['speed'] else 113)  # The shortened 452-dot first line.
+        cases.append(dict(case, pad=pad,
+                          name=f'{"double" if case["speed"] else "normal"}-{case["edge"]}-'
+                               f'{case["operation"]}-startup-pad{pad}'))
+    return cases
+
+
 def probe_rom(case, polling=True):
-    if case not in scenarios():
+    if case not in scenarios() and case not in startup_scenarios():
         raise ValueError('unknown access scenario')
     data = bytearray(32768)
     data[0x100:0x103] = bytes.fromhex('c3 50 01')

@@ -597,12 +597,26 @@ and one equal-cost NOP end-only control per core give 1,408 executions.
 
 Every snapshot run repeats and matches its end-only serialized state; every
 access result matches the NOP control. Of the cross-core executed access
-results, 166 match and ten differ. Mode and pixel timelines remain explicitly
-different; the paired CLI exits **1**. A rejected quiet-NOP calibration is
+results, the initial run matched 166 and differed on ten. The retained native
+CPU access correction now matches **176/176**, with the initial mismatches
+preserved under `historical_before`. End-only model controls also match
+176/176 each on CGB0 and CGB-C. Mode and pixel timelines remain explicitly
+different; the paired CLI still exits **1**. A rejected quiet-NOP calibration is
 preserved because its final visible snapshot agrees while its serialized
 reference renderer differs. Those differences are not masked. Public CTest
 needs no external library and checks live allowed/blocked accesses, serialized
 state equivalence, bounds, invalid records and the frozen paired evidence.
+The CGB contract adds both palette ports, auto-increment/wrap on blocked writes,
+instruction-clock and IO-trace checks, compatibility controls and serialized
+replay at the entry/exit boundaries. The ordinary elapsed-clock and pixel-frontier
+grids were rerun unchanged; their full paired rows are identical to the earlier
+core, with previous source hashes retained in revalidation metadata.
+Additional end-only CGB-E startup controls use ROMs from `startup_scenarios()`
+and the same adapters. The 176 before/current/reference comparisons improve
+from 166 to 174 matching access results, without a newly mismatching case.
+Two pre-existing normal-speed first-line VRAM handoff results remain
+unqualified. The live boundary/save-state unit coverage also includes the
+AGB0/AGB startup-compatibility profiles; those are not independent AGB sweeps.
 
 
 `gameboy_cgb_reti_dispatch_probe_contract` adds software-requested RETI/RET/EI

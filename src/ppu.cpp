@@ -227,12 +227,22 @@ void Ppu::write_vram(const std::uint16_t address,
     }
 }
 
+std::uint8_t Ppu::cpu_read_vram(const std::uint16_t address) const noexcept {
+    // Native CPU access still reaches VRAM at the ordinary dot-80 handoff.
+    // Direct/debug accesses keep the established internal arbitration rule.
+    if (cgb_mode_ && !lcd_startup_ && dot_ == 80 && mode_ == 2 && stat_mode_ == 3) {
+        const auto& bank = vram_bank_ != 0 ? *cgb_vram_ : vram_;
+        return bank[address - 0x8000];
+    }
+    return read_vram(address);
+}
+
 void Ppu::cpu_write_vram(const std::uint16_t address,
                          const std::uint8_t value) noexcept {
     // A CPU write that completes on the mode-2-to-mode-3 handoff still
-    // reaches VRAM on DMG-family hardware. Direct bus writes remain governed
-    // by the internal mode-3 arbitration boundary used by diagnostics.
-    const auto mode_transition_write = !cgb_hardware_ && !lcd_startup_ &&
+    // reaches VRAM on DMG-family and native CGB hardware. Direct writes follow
+    // the internal mode-3 arbitration boundary used by diagnostics.
+    const auto mode_transition_write = (!cgb_hardware_ || cgb_mode_) && !lcd_startup_ &&
                                        dot_ == 80 &&
                                        mode_ == 2 && stat_mode_ == 3;
     if (!lcd_enabled() || (mode_ != 3 && stat_mode_ != 3) ||
@@ -723,4 +733,22 @@ bool Ppu::write_register(const std::uint16_t address,
     return update_stat_line();
 }
 
+std::uint8_t Ppu::cpu_read_palette(const std::uint16_t address,
+                                  const bool double_speed) const noexcept {
+    // Normal-speed palette arbitration follows the internal transfer edge;
+    // double speed retains the CPU-visible mode gate at this sampling phase.
+    if (cgb_mode_ && !double_speed && stat_mode_ == 3) return 0xFF;
+    return read_register(address);
+}
+
+bool Ppu::cpu_write_palette(const std::uint16_t address, const std::uint8_t value,
+                            const bool double_speed, const std::uint64_t clock) noexcept {
+    if (cgb_mode_ && !double_speed && stat_mode_ == 3 && mode_ != 3) {
+        // A blocked data write still increments and wraps the palette index.
+        auto& index = address == 0xFF69 ? bg_palette_index_ : object_palette_index_;
+        if (index & 0x80) index = static_cast<std::uint8_t>(0x80 | ((index + 1) & 0x3F));
+        return false;
+    }
+    return write_register(address, value, clock);
+}
 } // namespace gameboy

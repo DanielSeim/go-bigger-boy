@@ -1381,7 +1381,8 @@ core (only the unused reference host RTC timestamp is masked in the copied
 buffer). Every NOP control returns the same access result as its polling form.
 This is 1,408 executions, with no production CPU/PPU changes.
 
-The cores agree on 166 executed access results and differ on ten. Each entry
+Before the native access correction, the cores agreed on 166 executed results
+and differed on ten. Each entry
 below represents a read/write pair:
 
 | Speed | Boundary | Access | GBB | Pinned reference |
@@ -1409,3 +1410,56 @@ with read/write symmetry, speed and save/load controls retained. Object-palette
 accesses, other CGB revisions and broader fine-scroll/window/sprite effects
 remain outside this witness. The fifteen private release screenshots and
 publication hold are unchanged; no baseline refresh was performed.
+
+The retained correction resolves those ten executed-access differences without
+changing the pixel pipeline or interrupt dispatch. Native CGB CPU VRAM reads
+and writes still reach the selected bank at the ordinary dot-80 handoff, while
+direct/debug and compatibility arbitration keep their existing rules. CPU
+FF69/FF6B data accesses now sample before their last machine cycle; all four
+clocks of that cycle remain in the instruction. Normal-speed palette entry
+also respects the internal transfer gate before STAT's visible mode bits
+change; double speed retains the visible-mode gate at this earlier sampling
+phase. Blocked writes still increment and wrap their index. Diagnostic IO
+writes remain recorded exactly once at the actual CPU access phase.
+
+The new full paired run matches 176/176 executed BG-palette/VRAM results on
+CGB-E, with repeated snapshots, identical end-only serialization and equal-cost
+NOP access controls. Additional end-only model substitutions match 176/176 each
+on CGB0 and CGB-C (528 total paired access cases). The frozen fixture retains
+the previous source revision, initial ten mismatches and original summary.
+Local CPU witnesses add both BG/OBJ palette ports, indices 2/63, both speeds,
+entry/exit points and full serialized replay on CGB0/CGB-C/CGB-E/the CGB alias,
+plus the AGB0/AGB startup-compatibility profiles (600 native witnesses).
+Separate monochrome/compatibility witnesses preserve their handoff behavior.
+The independent executed-access grid directly measures BG data; OBJ uses the
+shared palette gate and has local CPU/save-state coverage rather than a separate
+independent matrix. No persistent state field or save-state version is added.
+
+The 4,928-case model matrix reports zero new regressions. All 100 private ROMs
+complete their 300 captures, with every pixel hash and capture metadata row
+identical to the previous core. This preserves the existing independent result
+of thirty exact reference matches and fifteen unqualified screenshots across
+ten ROMs among the forty-five baseline changes. The twenty elapsed-clock and
+238 pixel-frontier paired rows also remain identical after rerunning their
+complete grids; their earlier source hashes are retained explicitly.
+All 274 selected public headless contracts pass with no skipped tests. The
+expanded native/compatibility unit contract also passes; relinking it against
+the previous CPU/PPU/bus implementation fails 504 access/IO-trace assertions.
+
+An additional end-only startup sweep shifts the authored schedule by the
+shortened 452-dot first line, using `startup_scenarios()` ROMs in CGB-E.
+Before/current/reference runs total 528 executions over 176 cases. The previous
+core matched 166; the correction matches 174, with no newly mismatching case.
+The remaining pair is normal-speed VRAM read/write at startup pad12: both
+cores are compared at the same executed instruction, but GBB still returns FF
+or retains A5 where the reference reads A5 or stores 5A. These differences
+predate the correction. Its ordinary-line handoff exception intentionally does
+not apply to LCD startup. The fixture preserves the unresolved pair rather
+than reporting the whole startup scope as passing.
+
+The mode/pixel timelines are still different, so the combined research CLI
+continues to exit 1 despite matching every executed access. The release remains
+on hold with its baseline unchanged. Next resolve the normal-speed first-line
+VRAM handoff, then isolate ordinary-line pixel-emission phase while retaining
+the matching access gates as constraints. Moving output or shortening mode 3
+cannot be justified by the access results alone.

@@ -1751,9 +1751,11 @@
     "scripts/cgb_elapsed_anchor_probe.py": "4c7605fa042379bc2dbc082b90e7266defc7332a13a87f82c200a82d02ba92bd",
     "scripts/sameboy_elapsed_capture.c": "daf976f40bd54c8b0314ce405c37912c5a859dc7f0d25da38a417616a7792013",
     "scripts/cgb_frame_anchor_probe.py": "64ebef18d72fe32b55c9dcebfb6a9279459a5584123d7b3872cd2e62c41fd39c",
-    "src/cpu.cpp": "fdf86b750e99c1e6240bd5bf1237f98819c7329b7e7c2a035bc3b3b05fa3e56e",
+    "src/cpu.cpp": "c1a6515a6d79fce11d19d2574a248e87a7430139286e0b9088d47f67856eb945",
     "src/emulator.cpp": "2b61b6e4dd0b7f49e9e797fa2d7dfcc84d36cb2410b69f96d2bb7feb63d74227",
-    "src/ppu.cpp": "8bf0364c48b072caa042810bb17582a98d04574da3bba3e7af4b8736e085812b"
+    "src/ppu.cpp": "c0f4557a48160f91451e85cd131694ac9802452324211bd228bbbb4d2efe9177",
+    "include/gameboy/ppu.hpp": "500d0ab829762e62de098ef366a2f21e72e9e726c8f3034195045d31040c1002",
+    "include/gameboy/memory_bus.hpp": "61d8f5b035c82a22987d4ecffc13c9b9031a880e0783a5236558a1bb93337084"
   },
   "reference": {
     "repository": "https://github.com/LIJI32/SameBoy",
@@ -1775,5 +1777,16 @@
     "Three large mismatches retain first-frame presentation differences after LCD enable; the pinned reference clears its first-frame output at VBlank.",
     "Three two-pixel differences occur at active drawing boundaries, including after multiple completed frames; their cause remains unqualified.",
     "The CLI exits 1 for this result. No screenshot offset or baseline refresh is applied."
-  ]
+  ],
+  "revalidation_after_native_access_correction": {
+    "base_core_revision": "10892d7",
+    "previous_core_source_sha256": {
+      "src/cpu.cpp": "fdf86b750e99c1e6240bd5bf1237f98819c7329b7e7c2a035bc3b3b05fa3e56e",
+      "src/emulator.cpp": "2b61b6e4dd0b7f49e9e797fa2d7dfcc84d36cb2410b69f96d2bb7feb63d74227",
+      "src/ppu.cpp": "8bf0364c48b072caa042810bb17582a98d04574da3bba3e7af4b8736e085812b"
+    },
+    "all_paired_rows_identical": true,
+    "paired_rows": 20,
+    "rows_sha256": "bcd0769035c05e940bb1c55541f23408dcf3dfaf0c8f3c0001efa8da1f55cb5c"
+  }
 }

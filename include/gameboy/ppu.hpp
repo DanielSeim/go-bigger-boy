@@ -99,6 +99,11 @@ public:
 
     [[nodiscard]] std::uint8_t read_vram(std::uint16_t address) const noexcept;
     void write_vram(std::uint16_t address, std::uint8_t value) noexcept;
+    [[nodiscard]] std::uint8_t cpu_read_vram(std::uint16_t address) const noexcept;
+    [[nodiscard]] std::uint8_t cpu_read_palette(std::uint16_t address,
+                                               bool double_speed) const noexcept;
+    [[nodiscard]] bool cpu_write_palette(std::uint16_t address, std::uint8_t value,
+                                         bool double_speed, std::uint64_t clock) noexcept;
     void cpu_write_vram(std::uint16_t address, std::uint8_t value) noexcept;
     void dma_write_vram(std::uint16_t address, std::uint8_t value) noexcept;
     [[nodiscard]] std::uint8_t debug_read_vram(std::uint8_t bank,

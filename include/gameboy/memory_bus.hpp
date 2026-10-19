@@ -180,6 +180,7 @@ private:
 
     [[nodiscard]] std::uint8_t cpu_read8(std::uint16_t address) const noexcept;
     void cpu_write8(std::uint16_t address, std::uint8_t value) noexcept;
+    void trace_io_write(std::uint16_t address, std::uint8_t value) noexcept;
     [[nodiscard]] bool oam_dma_blocks(std::uint16_t address) const noexcept;
     [[nodiscard]] std::uint8_t read_wram(std::uint16_t address) const noexcept;
     void write_wram(std::uint16_t address, std::uint8_t value) noexcept;

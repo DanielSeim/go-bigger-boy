@@ -210,6 +210,102 @@ void test_native_interrupt_fetch_sample() {
     }
 }
 
+void test_native_pixel_access_boundaries() {
+    // Independently authored line-one access witnesses. The paired external
+    // sweep covers executed accesses; these add both palette ports, index wrap,
+    // serialized replay and CPU-versus-direct VRAM arbitration controls.
+    for (const auto model : {gameboy::HardwareModel::cgb0, gameboy::HardwareModel::cgb_c,
+                             gameboy::HardwareModel::cgb_e, gameboy::HardwareModel::cgb,
+                             gameboy::HardwareModel::agb0, gameboy::HardwareModel::agb}) {
+        for (const bool fast : {false, true}) {
+            for (const bool palette : {false, true}) {
+                for (const bool object : {false, true}) {
+                    if (!palette && object) continue;
+                    for (const unsigned index : {2U, 63U}) {
+                        if (!palette && index != 2) continue;
+                        for (const bool write : {false, true}) {
+                            for (const unsigned dot : {79U, 80U, 81U, 252U, 253U}) {
+                                auto image = cgb_test_rom({0x3e, 1, 0xe0, 0x4d, 0x10, 0});
+                                const auto port = static_cast<std::uint16_t>(object ? 0xff6b : 0xff69);
+                                image[0x200] = palette ? (write ? 0xe0 : 0xf0) : (write ? 0x70 : 0x7e);
+                                image[0x201] = static_cast<std::uint8_t>(port);
+                                gameboy::Emulator e{gameboy::Cartridge{std::move(image)}, model};
+                                if (fast) {
+                                    for (unsigned n=0;n<3;++n) (void)e.step();
+                                    while (e.cpu().debug_speed_switch_cycles_remaining()) (void)e.step();
+                                    (void)e.step(); // Complete resumption through the cartridge NOP.
+                                    check(e.bus().double_speed(), "access witness enters double speed");
+                                }
+                                auto& bus=e.bus();
+                                bus.write8(0xff40,0); bus.write8(0xff4f,0);
+                                bus.write8(0x8100,0xa5);
+                                bus.write8(static_cast<std::uint16_t>(port-1),static_cast<std::uint8_t>(index));
+                                bus.write8(port,3);
+                                bus.write8(static_cast<std::uint16_t>(port-1),static_cast<std::uint8_t>(0x80|index));
+                                auto r=e.cpu().registers();r.pc=0x200;r.a=0x91;r.b=0x5a;r.h=0x81;r.l=0;
+                                e.set_cpu_registers(r);
+                                bus.write8(0xff40,0x91);
+                                const unsigned scale=fast?2:1;
+                                bus.tick((452+dot)*scale-8);
+                                check(bus.read8(0xff44)==1,"access witness measures an ordinary visible line");
+                                bus.debug_enable_io_trace(true);
+                                const auto before=e.save_state();
+                                const auto clock=bus.debug_bus_cycles();
+                                const auto cycles=e.cpu().total_cycles();
+                                check(e.step()==(palette?12U:8U) &&
+                                          e.cpu().total_cycles()-cycles==(palette?12U:8U),
+                                      "access sampling preserves the instruction's complete CPU duration");
+                                const bool allowed=palette?(dot<80 || dot>=253 || (fast && dot==80))
+                                                          :(dot<=80 || dot>=253);
+                                if (write) {
+                                    const auto value=palette?(object?bus.debug_read_cgb_object_palette(static_cast<std::uint8_t>(index))
+                                                                   :bus.debug_read_cgb_bg_palette(static_cast<std::uint8_t>(index)))
+                                                            :bus.debug_read_vram(0,0x100);
+                                    check(value==(allowed?(palette?0x91:0x5a):(palette?3:0xa5)),
+                                          "native write observes the independently measured access boundary");
+                                } else check(e.cpu().registers().a==(allowed?(palette?3:0xa5):0xff),
+                                             "native read observes the independently measured access boundary");
+                                if (!palette && dot==80) {
+                                    check(bus.read8(0x8100)==0xff,
+                                          "native CPU handoff access does not relax direct/debug VRAM arbitration");
+                                }
+                                if (palette) {
+                                    const auto expected=write?((index+1)&63):index;
+                                    check((bus.read8(static_cast<std::uint16_t>(port-1))&0xbf)==(0x80|expected),
+                                          "blocked palette writes still auto-increment and wrap; reads do not");
+                                }
+                                const auto trace=bus.debug_take_io_trace();
+                                if (palette && write) {
+                                    check(trace.size()==1 && trace[0].address==port && trace[0].value==0x91 &&
+                                              trace[0].cycle==clock+8,
+                                          "native palette IO diagnostics record the actual earlier write phase once");
+                                } else check(trace.empty(),"non-IO access does not invent an IO write");
+                                const auto after=e.save_state();
+                                e.load_state(before); (void)e.step();
+                                check(e.save_state()==after,"access boundaries and palette index replay through save/load");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for (const auto model : {gameboy::HardwareModel::dmg, gameboy::HardwareModel::mgb,
+                             gameboy::HardwareModel::cgb_e}) {
+        for (const bool write : {false,true}) {
+            auto image=test_rom({static_cast<std::uint8_t>(write?0x70:0x7e)});
+            gameboy::Emulator e{gameboy::Cartridge{std::move(image)},model};
+            auto& bus=e.bus();bus.write8(0xff40,0);bus.write8(0x8100,0xa5);
+            auto r=e.cpu().registers();r.h=0x81;r.l=0;r.b=0x5a;e.set_cpu_registers(r);
+            bus.write8(0xff40,0x91);bus.tick(452+72);
+            check(e.step()==8,"compatibility handoff retains its instruction duration");
+            if(write) check(bus.debug_read_vram(0,0x100)==(model==gameboy::HardwareModel::cgb_e?0xa5:0x5a),
+                            "monochrome and CGB compatibility writes retain their separate handoff rules");
+            else check(e.cpu().registers().a==0xff,"compatibility reads retain internal VRAM arbitration");
+        }
+    }
+}
+
 void test_split_double_speed_clocks() {
     const auto image = cgb_test_rom({0x3e, 1, 0xe0, 0x4d, 0x10, 0, 0, 0xf0, 0x0f});
     const auto prepare = [](gameboy::Emulator& emulator) {
@@ -503,6 +599,7 @@ int main() {
         test_cgb_memory_and_rendering();
         test_native_interrupt_fetch_sample();
         test_split_double_speed_clocks();
+        test_native_pixel_access_boundaries();
     } catch (const std::exception& error) {
         std::cerr << "Unexpected exception: " << error.what() << '\n';
         return 1;
