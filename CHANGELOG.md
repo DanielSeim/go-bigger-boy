@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Parallelize ThreadSanitizer contracts across four Linux runners, splitting
+  the longest firmware contract by scenario and SGB model while retaining all
+  assertions, the SDL smoke test, and a combined required-check status.
+
 - Isolate native CGB transfer-end VRAM readback with owned bank, tile-row and
   prefetch controls. Preserve reference address-collision observations without
   changing production timing or private release baselines.

@@ -277,9 +277,13 @@ jobs:
           retention-days: 14
 
   thread-sanitizer:
-    name: ThreadSanitizer contracts
+    name: ThreadSanitizer shard (${{ matrix.shard }})
     runs-on: ubuntu-24.04
     timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     steps:
       - name: Check out source
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -320,13 +324,15 @@ jobs:
         env:
           TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:history_size=7
         run: >-
-          ctest --test-dir build-tsan --output-on-failure --parallel 2
-          --label-exclude sgb-firmware-extended --output-junit tsan-ctest.xml
+          python3 tests/run_tsan_contract_shard.py --build-dir build-tsan
+          --shard-index ${{ matrix.shard }} --shard-count 4 --parallel 2
 
       - name: Install X11 input driver for GUI smoke
+        if: matrix.shard == 0
         run: sudo apt-get update && sudo apt-get install --no-install-recommends -y xdotool
 
       - name: Prepare debugger smoke ROM
+        if: matrix.shard == 0
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -345,6 +351,7 @@ jobs:
           PY
 
       - name: Run bounded SDL frontend and debugger smoke under Xvfb
+        if: matrix.shard == 0
         env:
           SDL_AUDIODRIVER: dummy
           SDL_VIDEODRIVER: x11
@@ -364,16 +371,30 @@ jobs:
           done
           exit 1
 
-      - name: Upload interactive SDL TSan artifacts
+      - name: Upload ThreadSanitizer diagnostics
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: tsan-gui-artifacts
+          name: tsan-results-${{ matrix.shard }}
           path: |
             tsan-gui-artifacts
-            tsan-ctest.xml
+            build-tsan/tsan-ctest.xml
+            build-tsan/tsan-shard.json
+            build-tsan/Testing/Temporary/LastTest.log
           if-no-files-found: ignore
           retention-days: 14
+
+  thread-sanitizer-result:
+    name: ThreadSanitizer contracts
+    needs: thread-sanitizer
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every ThreadSanitizer shard
+        env:
+          SHARD_RESULT: ${{ needs.thread-sanitizer.result }}
+        run: test "$SHARD_RESULT" = success
 
   fuzzers:
     name: libFuzzer parser smoke

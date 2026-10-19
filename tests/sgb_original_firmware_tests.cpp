@@ -5,6 +5,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace {
 using Host = gameboy::SgbHost;
@@ -319,11 +320,43 @@ void unsupported(gameboy::HardwareModel model) {
     }
 }
 }
-int main() {
+int main(int argc, char** argv) {
     try {
-        for(auto model:{gameboy::HardwareModel::sgb,gameboy::HardwareModel::sgb2}) {
-            startup(model); instruments(model); sound(model,false); sound(model,true); attributes(model); modulation_state(model); bank_and_scores(model); modulation_effects(model); unsupported(model);
+        // Each scenario constructs its own hosts. Selecting one here lets TSan
+        // exercise the same assertions in separate processes/runners.
+        const std::pair<const char*, void (*)(gameboy::HardwareModel)> cases[]{
+            {"startup", startup}, {"instruments", instruments},
+            {"sound_native", [](auto model) { sound(model, false); }},
+            {"sound_combined", [](auto model) { sound(model, true); }},
+            {"attributes", attributes}, {"modulation_state", modulation_state},
+            {"bank_and_scores", bank_and_scores},
+            {"modulation_effects", modulation_effects}, {"unsupported", unsupported},
+        };
+        if (argc == 2 && std::string(argv[1]) == "--list-cases") {
+            for (const auto& entry : cases) std::cout << entry.first << '\n';
+            return 0;
         }
-        std::cout<<"Original SGB1/SGB2 firmware: upload, boot packets, two voices, stop, unsupported audio, reset, restore, scalar/combined playback passed\n";
+        const bool selected = argc == 5 && std::string(argv[1]) == "--case" &&
+                              std::string(argv[3]) == "--model";
+        require(argc == 1 || selected, "expected --case NAME --model sgb|sgb2 or no arguments");
+        if (selected) {
+            require(std::string(argv[4]) == "sgb" || std::string(argv[4]) == "sgb2", "unknown firmware test model");
+            require(std::any_of(std::begin(cases), std::end(cases), [&](const auto& entry) {
+                return std::string(argv[2]) == entry.first;
+            }), "unknown firmware test case");
+        }
+        for(auto model:{gameboy::HardwareModel::sgb,gameboy::HardwareModel::sgb2}) {
+            const std::string model_name = model == gameboy::HardwareModel::sgb ? "sgb" : "sgb2";
+            if (selected && model_name != argv[4]) continue;
+            for (const auto& entry : cases) {
+                if (!selected || std::string(argv[2]) == entry.first) entry.second(model);
+            }
+        }
+        if (selected) {
+            std::cout << "Original firmware case: model=" << argv[4]
+                      << " case=" << argv[2] << " passed\n";
+        } else {
+            std::cout<<"Original SGB1/SGB2 firmware: upload, boot packets, two voices, stop, unsupported audio, reset, restore, scalar/combined playback passed\n";
+        }
     } catch(const std::exception& e) { std::cerr<<e.what()<<'\n'; return 1; }
 }

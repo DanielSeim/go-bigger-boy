@@ -161,10 +161,21 @@ free.
 
 ## Sanitizers and frontend smoke tests
 
-The CI ThreadSanitizer job also builds the SDL frontend with SDL enabled,
-runs the display-independent contract tests, and performs a bounded dashboard
+CI runs ThreadSanitizer contracts on four independent Linux runners, with two
+CTest processes per runner. `tests/run_tsan_contract_shard.py` discovers all
+contracts except the existing `sgb-firmware-extended` group and assigns each
+exactly once using deterministic duration estimates. New contracts join
+automatically. The longest firmware contract is split into its nine existing
+scenarios for each of SGB1/SGB2 in TSan builds; ordinary builds and direct
+no-argument execution retain the combined contract. Each scenario constructs
+fresh hosts and retains its complete assertions, reset and save/load checks.
+
+All four jobs build with SDL enabled; shard zero also performs a bounded dashboard
 window and debugger smoke under Xvfb, driven by `tests/sdl_tsan_smoke.sh` with a
-synthetic ROM and checked debugger captures. Longer interactive sessions
+synthetic ROM and checked debugger captures. Each shard uploads its selection
+plan, JUnit report and CTest log, including on failure. The existing
+`ThreadSanitizer contracts` status succeeds only when every shard succeeds;
+a failing shard does not cancel its peers. Longer interactive sessions
 remain part of the normal desktop build because they require a display server
 and user input.
 
@@ -180,6 +191,18 @@ cmake --build build-tsan-sdl --parallel
 TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1 \
   ctest --test-dir build-tsan-sdl --output-on-failure --parallel 2
 ```
+
+To reproduce one CI shard after building, run:
+
+```sh
+TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1:history_size=7 \
+  python3 tests/run_tsan_contract_shard.py --build-dir build-tsan-sdl \
+    --shard-index 0 --shard-count 4 --parallel 2
+```
+
+Use indices 0 through 3 to cover the complete CI selection, or add `--plan-only`
+to inspect assignment without running tests. Duration estimates affect balancing
+only; they do not change test timeouts or coverage.
 
 For the bounded dashboard input smoke, install Xvfb and xdotool, then run:
 

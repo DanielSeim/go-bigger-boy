@@ -678,6 +678,10 @@ if(GAMEBOY_BUILD_TESTS)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/private_rom_validation_tests.py)
         add_test(NAME gameboy_sgb_firmware_shard_contract
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_firmware_shard_tests.py)
+        add_test(NAME gameboy_tsan_shard_contract
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/tsan_contract_shard_tests.py
+                --firmware-runner $<TARGET_FILE:gameboy_sgb_original_firmware_tests>
+                --build-dir ${CMAKE_BINARY_DIR} --config $<CONFIG>)
     endif()
     if(Python3_Interpreter_FOUND)
         add_test(NAME gameboy_stat_irq_tool
@@ -1464,7 +1468,20 @@ if(GAMEBOY_BUILD_TESTS)
     add_test(NAME gameboy_sgb_original_transfer_contract COMMAND gameboy_sgb_original_transfer_tests)
     add_executable(gameboy_sgb_original_firmware_tests tests/sgb_original_firmware_tests.cpp)
     target_link_libraries(gameboy_sgb_original_firmware_tests PRIVATE gameboy_core)
-    add_test(NAME gameboy_sgb_original_firmware_contract COMMAND gameboy_sgb_original_firmware_tests)
+    if(GAMEBOY_ENABLE_THREAD_SANITIZER)
+        # Preserve every scenario/model, but let independent TSan jobs share
+        # this otherwise half-hour-long contract. Ordinary builds keep the
+        # original combined contract and the executable's no-argument mode.
+        foreach(_gbb_model sgb sgb2)
+            foreach(_gbb_case startup instruments sound_native sound_combined
+                    attributes modulation_state bank_and_scores modulation_effects unsupported)
+                add_test(NAME gameboy_sgb_original_firmware_${_gbb_model}_${_gbb_case}_contract
+                    COMMAND gameboy_sgb_original_firmware_tests --case ${_gbb_case} --model ${_gbb_model})
+            endforeach()
+        endforeach()
+    else()
+        add_test(NAME gameboy_sgb_original_firmware_contract COMMAND gameboy_sgb_original_firmware_tests)
+    endif()
     if(Python3_Interpreter_FOUND)
         add_test(NAME gameboy_sgb_vendor_music_contract
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sgb_vendor_music_tests.py
