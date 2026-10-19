@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add authored first-STAT-vector witnesses with stacked return addresses,
+  foreground instruction phase sweeps and LCD-off software-interrupt controls.
+  Keep the measured reference mismatches explicit without changing CPU timing.
+
 - Preserve fractional double-speed peripheral clocks across split bus ticks.
   IF reads no longer lose a PPU/cartridge clock in their `3 + 1` CPU-cycle
   split. The existing saved normalized clock carries the phase. Add an

@@ -369,6 +369,22 @@ correcting split double-speed peripheral-clock accounting. This does not
 qualify the separate normal-speed LCD-startup IRQ counter discrepancy above.
 
 
+`gameboy_cgb_stat_vector_probe_contract` checks terminal first-vector witnesses,
+stacked return-PC instruction boundaries and fail-closed result handling. Run:
+
+```sh
+python3 scripts/cgb_stat_vector_probe.py \
+  --runner build/gbb_test_runner --sameboy-capture /path/to/sameboy-capture \
+  --output /path/to/new-stat-vector-results
+```
+
+The 64 authored cartridges cover hardware STAT versus LCD-off software IF,
+two foreground loops, eight post-trigger NOP phases and both CPU speeds.
+Two captures per core at completed PPU frame 4 must repeat. The paired run
+currently exits 1: 48/64 comparisons match, including every software control.
+The passing offline contract validates the tooling, not reference parity.
+
+
 `gameboy_cgb_reti_dispatch_probe_contract` adds software-requested RETI/RET/EI
 phase sweeps and an equal-cost direct-call control. These exposed and verify a
 CGB timer-entry clock correction; the guide distinguishes the now-matching

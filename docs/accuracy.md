@@ -1045,3 +1045,36 @@ Run only the exact framebuffer comparisons with:
 ```sh
 ctest --test-dir build-conformance -L visual --output-on-failure
 ```
+
+
+The first-vector follow-up (`scripts/cgb_stat_vector_probe.py`) records BC and
+the interrupt's stacked return PC before terminating the first handler. Its
+first vector instruction copies B to A; a jump to the terminal logger leaves
+BC and the stacked address unchanged. The logger then pops that address into
+DE. DIV, LY, STAT, IF and KEY1 are read sequentially afterwards: they are not
+simultaneous edge timestamps. Completion is reachable only through the handler.
+
+The public evidence in
+`tests/fixtures/external-reference/cgb-stat-vector.json` covers 64 authored
+cartridges: hardware mode-2 STAT or software IF with LCD/STAT sources off,
+`INC BC; JR` or the original `INC BC; LD A,D; OR A; JR NZ` foreground,
+eight post-trigger NOP phases, and both speeds. The same owned boot and
+cartridges run in GBB and pinned SameBoy 1.0.3, with two takes per core at
+completed PPU frame 4. All observations repeat and satisfy the authored
+structural constraints. Exactly 48/64 comparisons match: all 32 software
+controls and 16/32 hardware STAT cases. Nine normal-speed and seven
+double-speed hardware cases differ, exclusively in BC and/or the stacked
+return PC. In particular, the original normal-speed phase-zero loop preserves
+the earlier BC=17 versus 16 distinction, with return PCs 0x1005 versus 0x1004.
+The earlier matching double-speed loop therefore did not establish parity
+across foreground alignments.
+
+These architectural witnesses narrow the remaining investigation to hardware
+STAT request/recognition relative to CPU instruction boundaries. They do not
+separate sub-instruction request timing from interrupt sampling, or establish
+which implementation matches physical hardware. The next useful control is
+an equal-cost foreground IF-read sweep around those same boundaries, followed
+by comparison of the internal request edge and interrupt sampling against the
+reference. No CPU/PPU timing, commercial screenshot baseline or release gate
+has been changed on this evidence alone. The research CLI retains exit 1 and
+`qualification: false` for the measured mismatch.
