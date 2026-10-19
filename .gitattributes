@@ -3,3 +3,12 @@
 tests/fixtures/sgb/*.script text eol=lf
 tests/fixtures/sgb/titles/*.script text eol=lf
 tests/fixtures/sgb/titles/*.sha256 text eol=lf
+
+# External-reference evidence pins source and rejected patches byte for byte.
+# Preserve those bytes even when the host uses core.autocrlf=true.
+*.py text eol=lf
+*.c text eol=lf
+*.cpp text eol=lf
+*.h text eol=lf
+*.hpp text eol=lf
+*.patch text eol=lf

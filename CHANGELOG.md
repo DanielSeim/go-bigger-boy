@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Preserve source and rejected-patch bytes during Windows checkouts so pinned
+  reference provenance checks remain valid with automatic CRLF conversion.
+
 - Allow ThreadSanitizer overhead in the live CGB probe contract timeouts while
   retaining every control and the shorter limits in ordinary builds.
 

@@ -161,6 +161,11 @@ free.
 
 ## Sanitizers and frontend smoke tests
 
+Reference evidence pins exact source and research-patch bytes. `.gitattributes`
+keeps Python, C/C++ and patch files in LF form on every platform;
+`gameboy_source_checkout_contract` exercises real Git checkout filters with
+`core.autocrlf=true` and verifies unchanged bytes and hashes.
+
 CI runs ThreadSanitizer contracts on four independent Linux runners, with two
 CTest processes per runner. `tests/run_tsan_contract_shard.py` discovers all
 contracts except the existing `sgb-firmware-extended` group and assigns each
