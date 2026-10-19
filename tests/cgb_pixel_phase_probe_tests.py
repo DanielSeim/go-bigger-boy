@@ -170,6 +170,7 @@ class PixelPhaseContracts(unittest.TestCase):
 
     def test_retained_reference_object_controls_expose_distinct_fetch_rules(self):
         evidence = json.loads(FIXTURE.read_text())
+        evidence = evidence.get('historical_before', evidence)
         rows = {r['scenario']: r for r in evidence['rows']}
         for speed in ('normal', 'double'):
             for scx in (0, 7):
@@ -182,6 +183,19 @@ class PixelPhaseContracts(unittest.TestCase):
                         self.assertEqual(edges('object-disabled-' + side, 'sameboy', 1), edges('object-' + side, 'sameboy', 1))
                         self.assertEqual(edges('object-disabled-' + side, 'gbb', 1), edges('background', 'gbb', 1))
                         self.assertNotEqual(edges('object-disabled-' + side, 'sameboy', 1), edges('background', 'sameboy', 1))
+
+    def test_current_ordinary_native_fetch_is_independent_of_display_enable(self):
+        evidence = json.loads(FIXTURE.read_text())
+        self.assertIn('historical_before', evidence)
+        rows = {r['scenario']: r for r in evidence['rows']}
+        for speed in ('normal', 'double'):
+            for scx in (0, 7):
+                for phase in (0, 1):
+                    for side in ('left', 'middle'):
+                        for core in ('gbb', 'sameboy'):
+                            key = f'{speed}-object-{{}}{side}-scx{scx}-phase{phase}'
+                            self.assertEqual(rows[key.format('disabled-')]['captures'][core]['lines'][1],
+                                             rows[key.format('')]['captures'][core]['lines'][1])
 
     def test_results_fail_closed_for_missing_cases_or_disagreements(self):
         evidence = json.loads(FIXTURE.read_text())

@@ -387,7 +387,7 @@ void Ppu::tick_mode3(const std::uint64_t clock) noexcept {
             --render_deadline;
             if (render_deadline == 0 &&
                 (rendered_sprite_mask_ & (std::uint64_t{1} << sprite)) == 0) {
-                if ((lcdc_ & 0x02) != 0) fetch_object(sprite);
+                if (cgb_mode_ || (lcdc_ & 0x02) != 0) fetch_object(sprite);
                 rendered_sprite_mask_ |= std::uint64_t{1} << sprite;
             }
         }
@@ -732,10 +732,10 @@ unsigned Ppu::trigger_sprites(const unsigned x) noexcept {
         const auto trigger_x = raw_x <= 8 ? 0U : raw_x - 8;
         if (trigger_x > x) break;
         ++next_line_sprite_;
-        // OBJ fetches are only scheduled while OBJ rendering is enabled. A
-        // sprite that reaches its trigger point during an OBJ-off interval is
-        // skipped; if OBJ is enabled again, later sprites can still trigger.
-        if ((lcdc_ & 0x02) == 0) continue;
+        // On ordinary native CGB lines, OBJ display enable does not gate
+        // fetch scheduling. Keep monochrome/compatibility and the separately
+        // unresolved startup selection behavior unchanged.
+        if ((lcdc_ & 0x02) == 0 && (!cgb_mode_ || lcd_startup_)) continue;
         pending_sprite_mask_ |= std::uint64_t{1} << index;
         const auto window_start = static_cast<int>(window_x_) - 7;
         const auto screen_x = static_cast<int>(raw_x) - 8;

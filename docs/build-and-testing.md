@@ -644,7 +644,33 @@ intervals for both lines, interior frontier differences, source hashes and
 reference provenance. First-line behavior, ordinary-line output phase and
 OBJ fetch/display behavior remain distinct findings. Exit 1 means a measured
 cross-core disagreement; exit 2 means invalid/incomplete or observer-dependent
-evidence. Production behavior and private baselines are unchanged.
+evidence. That initial measurement left production behavior and private
+baselines unchanged.
+
+`gameboy_cgb_object_access_probe_contract` adds CPU-executed VRAM/toggle
+witnesses using the same bounded adapters:
+
+```sh
+python3 scripts/cgb_object_access_probe.py \
+  --gbb-access-trace build-headless/gbb_pixel_access_trace \
+  --sameboy-access-trace /tmp/sameboy-pixel-access \
+  --output /tmp/cgb-object-access
+```
+
+Use a new output directory. The 512 ROMs cover both speeds, SCX 0/7,
+left/middle objects, reads/writes, eight transfer-end phases, static OBJ
+display states and mid-line toggles. Each core repeats observed captures and
+compares complete end-only serialization (3,072 executions). The retained
+ordinary-line fetch correction improves 402 to 466 matching results without
+a newly mismatching case. Forty-six results remain unqualified, including
+normal-speed reference reads of `00`; the CLI exits 1. Malformed or
+observer-dependent measurements exit 2. A broader cancellation change was
+rejected despite 488 matches because it introduced four regressions. Its
+excluded patch and counterexamples are retained under the pinned base.
+The local CGB contract also checks pending-fetch replay, late OBJ enable and
+warm reset across all six native profiles. Colored late-enable witnesses
+also check hidden pixel gathering on both VRAM banks. The phase fixture preserves its
+old evidence separately from the newly measured ordinary OBJ-off behavior.
 
 
 `gameboy_cgb_reti_dispatch_probe_contract` adds software-requested RETI/RET/EI

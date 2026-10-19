@@ -20720,7 +20720,7 @@
     "scripts/cgb_frame_anchor_probe.py": "64ebef18d72fe32b55c9dcebfb6a9279459a5584123d7b3872cd2e62c41fd39c",
     "src/cpu.cpp": "c1a6515a6d79fce11d19d2574a248e87a7430139286e0b9088d47f67856eb945",
     "src/ppu.cpp": "7fb6431ce0df1c7649ed1194293958a1ef1dc449df7999670408177ea5175176",
-    "src/ppu_timing.cpp": "03661bbe95056696279b1ae8b4e472d063655447e986487542fe4d339eb760ee",
+    "src/ppu_timing.cpp": "6ab768b3d875a1236a6c42a00f8b9bfe09f3833c8272bff4d9ca30ebea91c500",
     "src/memory_bus.cpp": "aa80005a3da08fd25d61e02bceb76aab63b2b8613d5507b5b36f7d7d6ffea6bb",
     "include/gameboy/ppu.hpp": "568fd97483e6aadba26c98562f5c1534c1d081ff1c48b43c4b76d2234f4977d9",
     "include/gameboy/memory_bus.hpp": "61d8f5b035c82a22987d4ecffc13c9b9031a880e0783a5236558a1bb93337084"
@@ -59982,5 +59982,23 @@
       "failed": 0,
       "skipped": 0
     }
+  },
+  "revalidation_after_native_object_fetch": {
+    "base_revision": "60e52efa3aaddda1ebdc8eddaf17f06d0017eb4f",
+    "previous_source_sha256": {
+      "scripts/cgb_pixel_access_probe.py": "4676435064837395199a7a537ffee493c0f6fce139bbadff197e517d62bc5d0c",
+      "scripts/pixel_access_trace.h": "e679b44c1507ca7e3429f5310ae685a41aac35a20b2fe1fde97200500a33181d",
+      "scripts/gbb_pixel_access_trace.cpp": "d514b2b74267ca746c7505b966b43b4852810fc28e22269f8ae3c55db434819e",
+      "scripts/sameboy_pixel_access_trace.c": "cc50bc656066d84f8acf1d71f8253023c070067abac5faf01ab943c42ae9dda9",
+      "scripts/cgb_frame_anchor_probe.py": "64ebef18d72fe32b55c9dcebfb6a9279459a5584123d7b3872cd2e62c41fd39c",
+      "src/cpu.cpp": "c1a6515a6d79fce11d19d2574a248e87a7430139286e0b9088d47f67856eb945",
+      "src/ppu.cpp": "7fb6431ce0df1c7649ed1194293958a1ef1dc449df7999670408177ea5175176",
+      "src/ppu_timing.cpp": "03661bbe95056696279b1ae8b4e472d063655447e986487542fe4d339eb760ee",
+      "src/memory_bus.cpp": "aa80005a3da08fd25d61e02bceb76aab63b2b8613d5507b5b36f7d7d6ffea6bb",
+      "include/gameboy/ppu.hpp": "568fd97483e6aadba26c98562f5c1534c1d081ff1c48b43c4b76d2234f4977d9",
+      "include/gameboy/memory_bus.hpp": "61d8f5b035c82a22987d4ecffc13c9b9031a880e0783a5236558a1bb93337084"
+    },
+    "paired_rows_identical": true,
+    "cases": 176
   }
 }

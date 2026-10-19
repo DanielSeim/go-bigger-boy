@@ -381,6 +381,122 @@ void test_native_startup_vram_access() {
     }
 }
 
+void test_native_disabled_object_fetch() {
+    for (const auto model : {gameboy::HardwareModel::cgb0, gameboy::HardwareModel::cgb_c,
+                             gameboy::HardwareModel::cgb_e, gameboy::HardwareModel::cgb,
+                             gameboy::HardwareModel::agb0, gameboy::HardwareModel::agb}) {
+        for (const bool fast : {false, true}) {
+            for (const unsigned x : {8U, 88U}) {
+                for (const unsigned dot : {80U, 100U, 180U, 248U, 260U, 280U}) {
+                    const auto image = cgb_test_rom({0x3e, 1, 0xe0, 0x4d, 0x10, 0});
+                    gameboy::Emulator shown{gameboy::Cartridge{image}, model};
+                    gameboy::Emulator hidden{gameboy::Cartridge{image}, model};
+                    const auto prepare = [&](gameboy::Emulator& e, const bool display) {
+                        if (fast) {
+                            for (unsigned i = 0; i < 3; ++i) (void)e.step();
+                            while (e.cpu().debug_speed_switch_cycles_remaining()) (void)e.step();
+                            (void)e.step();
+                            check(e.bus().double_speed(), "object witness enters double speed");
+                        }
+                        auto& bus = e.bus();
+                        bus.write8(0xff40, 0);
+                        for (unsigned i = 0; i < 160; ++i)
+                            bus.write8(static_cast<std::uint16_t>(0xfe00 + i), 0);
+                        // Transparent tile zero keeps all emitted RGB identical.
+                        for (unsigned i = 0; i < 16; ++i)
+                            bus.write8(static_cast<std::uint16_t>(0x8000 + i), 0);
+                        bus.write8(0xfe00, 16);
+                        bus.write8(0xfe01, static_cast<std::uint8_t>(x));
+                        // Both histories keep OBJ off during the separately unresolved
+                        // startup line; display differs only on ordinary line one.
+                        bus.write8(0xff40, 0x91);
+                        const unsigned scale = fast ? 2 : 1;
+                        bus.tick(453 * scale);
+                        bus.write8(0xff40, display ? 0x93 : 0x91);
+                        bus.tick((dot - 1) * scale);
+                        check(bus.read8(0xff44) == 1 && bus.debug_ppu_dot() == dot,
+                              "object fetch witness measures an ordinary visible line");
+                    };
+                    prepare(shown, true);
+                    prepare(hidden, false);
+                    const auto pending = hidden.save_state();
+                    hidden.bus().tick(32);
+                    const auto advanced = hidden.save_state();
+                    hidden.load_state(pending);
+                    hidden.bus().tick(32);
+                    check(hidden.save_state() == advanced,
+                          "native hidden fetch and deadlines replay through save/load");
+                    hidden.load_state(pending);
+                    shown.bus().write8(0xff40, 0x93);
+                    hidden.bus().write8(0xff40, 0x93);
+                    check(shown.save_state() == hidden.save_state(),
+                          "enabling native OBJ reveals the same transparent fetch state at every measured phase");
+                    shown.bus().tick(64);
+                    hidden.bus().tick(64);
+                    check(shown.save_state() == hidden.save_state(),
+                          "native fetch scheduling remains equal after late display enable");
+                    hidden.reset();
+                    check(hidden.cpu().registers().pc == 0x100,
+                          "native pending fetch state does not prevent warm reset");
+                }
+            }
+        }
+    }
+}
+
+void test_native_hidden_object_pixels_survive_late_enable() {
+    for (const auto model : {gameboy::HardwareModel::cgb0, gameboy::HardwareModel::cgb_c,
+                             gameboy::HardwareModel::cgb_e, gameboy::HardwareModel::cgb,
+                             gameboy::HardwareModel::agb0, gameboy::HardwareModel::agb}) {
+        for (const bool fast : {false, true}) {
+            for (const unsigned bank : {0U, 1U}) {
+                gameboy::Emulator e{gameboy::Cartridge{cgb_test_rom({0x3e, 1, 0xe0, 0x4d, 0x10, 0})}, model};
+                if (fast) {
+                    for (unsigned i = 0; i < 3; ++i) (void)e.step();
+                    while (e.cpu().debug_speed_switch_cycles_remaining()) (void)e.step();
+                    (void)e.step();
+                }
+                auto& bus = e.bus();
+                bus.write8(0xff40, 0);
+                for (unsigned i = 0; i < 160; ++i)
+                    bus.write8(static_cast<std::uint16_t>(0xfe00 + i), 0);
+                bus.write8(0xff4f, 0);
+                for (unsigned i = 0; i < 16; ++i)
+                    bus.write8(static_cast<std::uint16_t>(0x8000 + i), 0);
+                bus.write8(0xff4f, static_cast<std::uint8_t>(bank));
+                for (unsigned row = 0; row < 8; ++row) {
+                    bus.write8(static_cast<std::uint16_t>(0x8010 + row*2), 0xff);
+                    bus.write8(static_cast<std::uint16_t>(0x8011 + row*2), 0);
+                }
+                bus.write8(0xff4f, 0);
+                bus.write8(0xff68, 0x80); bus.write8(0xff69, 1); bus.write8(0xff69, 0);
+                bus.write8(0xff6a, 0x82); bus.write8(0xff6b, 0); bus.write8(0xff6b, 4);
+                bus.write8(0xfe00, 16); bus.write8(0xfe01, 8); bus.write8(0xfe02, 1);
+                bus.write8(0xfe03, bank ? 8 : 0);
+                bus.write8(0xff40, 0x91);
+                const unsigned scale = fast ? 2 : 1;
+                bus.tick((452 + 108) * scale);
+                const auto pending = e.save_state();
+                bus.write8(0xff40, 0x93);
+                bus.tick(32 * scale);
+                unsigned red = 0, blue = 0;
+                for (unsigned x = 0; x < 8; ++x) {
+                    const auto rgb = e.framebuffer()[160 + x] & 0xffffff;
+                    red += rgb == 0x080000;
+                    blue += rgb == 0x000008;
+                }
+                check(red > 0 && blue > 0 && red + blue == 8,
+                      "native OBJ-off fetch caches both VRAM banks without drawing until display enable");
+                const auto after = e.save_state();
+                e.load_state(pending);
+                bus.write8(0xff40, 0x93);
+                bus.tick(32 * scale);
+                check(e.save_state() == after, "hidden colored object FIFO replays through late enable");
+            }
+        }
+    }
+}
+
 void test_split_double_speed_clocks() {
     const auto image = cgb_test_rom({0x3e, 1, 0xe0, 0x4d, 0x10, 0, 0, 0xf0, 0x0f});
     const auto prepare = [](gameboy::Emulator& emulator) {
@@ -676,6 +792,8 @@ int main() {
         test_split_double_speed_clocks();
         test_native_pixel_access_boundaries();
         test_native_startup_vram_access();
+        test_native_disabled_object_fetch();
+        test_native_hidden_object_pixels_survive_late_enable();
     } catch (const std::exception& error) {
         std::cerr << "Unexpected exception: " << error.what() << '\n';
         return 1;

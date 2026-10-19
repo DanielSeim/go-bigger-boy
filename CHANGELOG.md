@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Schedule ordinary native CGB object fetches while OBJ display is disabled.
+  Add executed VRAM/toggle reference sweeps and save/load witnesses; retain
+  unresolved transfer-boundary and cancellation discrepancies explicitly.
+
 - Add bounded two-line CGB pixel/STAT phase probes with scroll, window and
   enabled/disabled object controls. Retain reference disagreements and
   snapshot-state checks without changing production timing or release baselines.

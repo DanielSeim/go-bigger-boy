@@ -1,0 +1,31 @@
+--- a/src/ppu_timing.cpp
++++ b/src/ppu_timing.cpp
+@@ -387,7 +387,7 @@
+             --render_deadline;
+             if (render_deadline == 0 &&
+                 (rendered_sprite_mask_ & (std::uint64_t{1} << sprite)) == 0) {
+-                if ((lcdc_ & 0x02) != 0) fetch_object(sprite);
++                if (cgb_mode_ || (lcdc_ & 0x02) != 0) fetch_object(sprite);
+                 rendered_sprite_mask_ |= std::uint64_t{1} << sprite;
+             }
+         }
+@@ -735,7 +735,7 @@
+         // OBJ fetches are only scheduled while OBJ rendering is enabled. A
+         // sprite that reaches its trigger point during an OBJ-off interval is
+         // skipped; if OBJ is enabled again, later sprites can still trigger.
+-        if ((lcdc_ & 0x02) == 0) continue;
++        if ((lcdc_ & 0x02) == 0 && (!cgb_mode_ || lcd_startup_)) continue;
+         pending_sprite_mask_ |= std::uint64_t{1} << index;
+         const auto window_start = static_cast<int>(window_x_) - 7;
+         const auto screen_x = static_cast<int>(raw_x) - 8;
+--- a/src/ppu.cpp
++++ b/src/ppu.cpp
+@@ -430,7 +430,7 @@
+         }
+         lcdc_ = value;
+         trace_window_state("lcdc_write");
+-        if (object_was_enabled && (value & 0x02) == 0) {
++        if (!cgb_mode_ && object_was_enabled && (value & 0x02) == 0) {
+             // A fetch can have populated the object FIFO before the PPU has
+             // reached its cancellation boundary. Remove only those sprites;
+             // already-emitted pixels are restored to the background.

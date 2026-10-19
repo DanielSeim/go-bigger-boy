@@ -1514,5 +1514,55 @@ eighty cases. The new research CLI therefore exits 1; malformed/incomplete or
 observer-dependent measurements exit 2. Public contracts check the retained
 disagreements, live two-line edges, polling-form controls, provenance and
 fail-closed validation. Production timing, saved state and the private release
-baseline remain unchanged. Next isolate native OBJ-disabled fetch scheduling
-with executed access and lifecycle controls before retaining a correction.
+baseline were unchanged by that initial measurement. The executed-access
+follow-up below isolates native OBJ-disabled fetch scheduling.
+
+The executed-access follow-up, `cgb-object-access.json`, tests 512 owned CGB-E ROMs:
+both native CPU speeds, left/middle transparent objects, SCX 0/7, VRAM reads
+and writes at eight ordinary-line completion dots (244..272), and four display
+histories. These keep OBJ off/on, disable it during the fetch window, or enable
+it after the fetch. Equal-cost ROM-authored STAT polls preserve a common clock
+schedule. Actual access bytes are compared, including reference boundary reads
+of `00`; that value is retained rather than classified as a normal accepted
+or blocked sentinel. Two observed takes and an end-only take per core check
+complete serialized-state equivalence, for 3,072 executions.
+
+The original implementation matched 402/512. A broad candidate also disabled
+native OBJ-off cancellation and matched 488/512, but introduced four new
+double-speed read/write disagreements at dot 264. It was rejected. The public
+patch, base-source hashes and four counterexamples preserve this experiment;
+it is not part of the build. Removing the cancellation behavior without also
+resolving the transfer boundary is not a validated correction.
+
+The retained change is narrower: ordinary native CGB fetch scheduling and
+object-data gathering no longer depend on display enable. Monochrome and CGB
+compatibility arbitration, startup selection, and OBJ-off cancellation remain
+unchanged. It matches 466/512, fixing 64 access results without a newly
+mismatching case. The four histories now match 122/128 (off), 122/128 (on),
+100/128 (disable-during) and 122/128 (enable-after). The remaining 46 results
+remain explicit disagreements, so the access research CLI still exits 1.
+
+The repeated 80-ROM pixel-phase sweep now has identical ordinary-line
+enabled/disabled edge records within each core for all sixteen object
+controls. Its original observations and source hashes remain under
+`historical_before`; startup and cross-core pixel/mode differences remain
+unqualified. Local native lifecycle witnesses cover six profiles, both speeds,
+left/middle objects, six ordinary-line dots, pending-fetch save/load replay,
+late enable and warm reset (144 pairs). Their startup histories are identical
+to isolate ordinary-line behavior. The previous fetch implementation fails
+240 assertions, including 24 colored-cache witnesses covering both VRAM banks
+and mid-sprite late enable. Removing only hidden data gathering also fails all
+24 colored-cache checks. No persistent state field or version changes.
+AGB profiles provide startup compatibility coverage, not independent AGB
+hardware validation.
+
+The 4,928-case hardware matrix has zero new regressions. All 100 private ROMs
+complete 300 captures with identical pixels and timing metadata. The 176
+ordinary access, 238 pixel-frontier and twenty elapsed-clock paired rows remain
+identical after rerunning the complete grids. Their earlier source hashes are
+retained explicitly. All 276 selected public headless contracts pass with no skipped tests.
+The original release hold and private baseline remain unchanged.
+
+Next isolate the native object-transfer boundary, including `00` readback and
+the double-speed dot-264 gate, before changing cancellation behavior. A closer
+framebuffer or a larger total match count cannot justify those four regressions.
