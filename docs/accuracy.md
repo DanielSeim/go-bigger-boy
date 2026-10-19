@@ -1476,3 +1476,43 @@ continues to exit 1 despite matching every executed access. The release remains
 on hold with its baseline unchanged. Next isolate ordinary-line
 pixel-emission phase while retaining the matching access gates as constraints. Moving output or shortening mode 3
 cannot be justified by the access results alone.
+
+The follow-up `cgb-pixel-phase.json` brackets first/last pixels and STAT
+mode-3 entry/exit on startup line zero and ordinary line one. Eighty owned
+ROMs vary both CPU speeds, all eight background fine-scroll values, two
+post-enable polling phases, left/middle windows, and left/middle transparent
+objects with OBJ display enabled or disabled. Background and window controls
+have empty OAM; all setup happens while LCD is off. The unused tile/palette
+sentinels and red/white frontier encoding remain unchanged. These are pixel
+and STAT observations, not additional executed VRAM/palette access sweeps.
+
+All eighty cases repeat and preserve complete end-only serialization within
+each core. Four equal-cost LDH-versus-HL STAT polling controls also preserve
+LY/mode/frontier at all 242 shared clock snapshots, with repeat and end-only
+checks. The full protocol takes 492 executions using the existing bounded
+adapters and pinned SameBoy 1.0.3. Edge intervals are open-left/closed-right
+in elapsed 8-MHz clocks, with no fitted offset. Frontier differences use only
+joint samples on the same visible line, with both cores actively drawing.
+
+For all sixteen empty-OAM background cases at normal speed, the reference
+leads by four interior pixels on startup and two on line one. The sixteen
+double-speed cases show leads of two and zero respectively. This does not
+establish a universal pixel delay: first-line behavior and CPU speed must be
+kept separate, and the earlier elapsed-clock/steady-state controls remain
+independent constraints.
+
+The object controls isolate two further disagreements. In all sixteen paired
+controls, reference startup edge records with an enabled transparent object
+equal empty-OAM records; GBB's do not. On ordinary line one, all sixteen
+reference disabled-OBJ edge records equal enabled-OBJ records. GBB instead
+matches empty OAM in all sixteen. This supports investigating native CGB
+object fetches separately from display enable and from startup OAM selection;
+it is software-reference evidence, not independent hardware validation.
+
+No complete pixel or mode timeline agrees across both lines in any of the
+eighty cases. The new research CLI therefore exits 1; malformed/incomplete or
+observer-dependent measurements exit 2. Public contracts check the retained
+disagreements, live two-line edges, polling-form controls, provenance and
+fail-closed validation. Production timing, saved state and the private release
+baseline remain unchanged. Next isolate native OBJ-disabled fetch scheduling
+with executed access and lifecycle controls before retaining a correction.

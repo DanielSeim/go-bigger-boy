@@ -816,6 +816,11 @@ if(GAMEBOY_BUILD_TESTS)
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_pixel_access_probe_tests.py
                          $<TARGET_FILE:gameboy_pixel_access_trace>)
         set_tests_properties(gameboy_cgb_pixel_access_probe_contract PROPERTIES TIMEOUT 60)
+        add_test(NAME gameboy_cgb_pixel_phase_probe_contract
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_pixel_phase_probe_tests.py
+                         $<TARGET_FILE:gameboy_pixel_access_trace>)
+        set_tests_properties(gameboy_cgb_pixel_phase_probe_contract PROPERTIES TIMEOUT 60)
         add_test(NAME gameboy_cgb_stat_clock_probe_contract
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_stat_clock_probe_tests.py

@@ -623,6 +623,29 @@ observer/end-only equivalence across the VRAM entry boundary. The live
 boundary/save-state unit coverage also includes the AGB0/AGB
 startup-compatibility profiles; those are not independent AGB sweeps.
 
+`gameboy_cgb_pixel_phase_probe_contract` adds a bounded two-line phase sweep
+using the same adapters:
+
+```sh
+python3 scripts/cgb_pixel_phase_probe.py \
+  --gbb-access-trace build-headless/gbb_pixel_access_trace \
+  --sameboy-access-trace /tmp/sameboy-pixel-access \
+  --output /tmp/cgb-pixel-phase
+```
+
+The output directory must be new. Eighty owned ROMs cover both speeds,
+SCX 0..7, two polling phases, left/middle windows and transparent objects with
+OBJ display enabled/disabled. All controls initialize OAM while LCD is off;
+background/window controls leave it empty. Two observed takes and one end-only
+take per core verify complete serialized-state equivalence. Four additional
+equal-clock STAT addressing-form controls bring the total to 492 executions.
+The frozen `cgb-pixel-phase.json` retains first/last pixel and STAT transition
+intervals for both lines, interior frontier differences, source hashes and
+reference provenance. First-line behavior, ordinary-line output phase and
+OBJ fetch/display behavior remain distinct findings. Exit 1 means a measured
+cross-core disagreement; exit 2 means invalid/incomplete or observer-dependent
+evidence. Production behavior and private baselines are unchanged.
+
 
 `gameboy_cgb_reti_dispatch_probe_contract` adds software-requested RETI/RET/EI
 phase sweeps and an equal-cost direct-call control. These exposed and verify a

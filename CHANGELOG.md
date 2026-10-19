@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Add bounded two-line CGB pixel/STAT phase probes with scroll, window and
+  enabled/disabled object controls. Retain reference disagreements and
+  snapshot-state checks without changing production timing or release baselines.
+
 - Correct native CGB first-line CPU VRAM access at dot 80 in normal speed,
   preserving the double-speed restriction, direct access arbitration and
   save/load behavior. Validate against owned-ROM reference sweeps.
