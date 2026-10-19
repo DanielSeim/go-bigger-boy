@@ -45,11 +45,19 @@ public:
     [[nodiscard]] bool debug_speed_switch_resume_pending() const noexcept { return speed_switch_resume_; }
     [[nodiscard]] bool interrupts_enabled() const noexcept;
     [[nodiscard]] std::uint64_t total_cycles() const noexcept;
-    // Called only for an actual opcode fetch, never idle/interrupt steps.
+    // Executed instructions only; discarded interrupt prefetches and idle/entry cycles are excluded.
     using InstructionObserver = void (*)(void*, std::uint16_t, std::uint8_t) noexcept;
     void debug_set_instruction_observer(InstructionObserver observer, void* context) noexcept {
         instruction_observer_ = observer;
         instruction_observer_context_ = context;
+    }
+
+    // Host-only observation of the initial IRQ recognition, before entry clocks
+    // and late priority arbitration. Not serialized and never advances time.
+    using InterruptObserver = void (*)(void*, std::uint16_t, std::uint8_t, bool after_fetch) noexcept;
+    void debug_set_interrupt_observer(InterruptObserver observer, void* context) noexcept {
+        interrupt_observer_ = observer;
+        interrupt_observer_context_ = context;
     }
 
 private:
@@ -65,7 +73,7 @@ private:
     [[nodiscard]] unsigned execute_cb(MemoryBus& bus);
     [[nodiscard]] std::uint8_t pending_interrupts(const MemoryBus& bus) const noexcept;
     [[nodiscard]] unsigned service_interrupt(MemoryBus& bus,
-                                             bool from_halt) noexcept;
+                                             bool from_halt, bool opcode_fetched = false) noexcept;
     [[nodiscard]] bool condition(unsigned index) const noexcept;
     void idle(MemoryBus& bus, unsigned cycles) noexcept;
     void idle_without_timer(MemoryBus& bus, unsigned cycles) noexcept;
@@ -113,6 +121,8 @@ private:
     std::uint64_t total_cycles_{};
     InstructionObserver instruction_observer_{};
     void* instruction_observer_context_{};
+    InterruptObserver interrupt_observer_{};
+    void* interrupt_observer_context_{};
 };
 
 } // namespace gameboy

@@ -1108,3 +1108,172 @@ write, first internal STAT request and interrupt dispatch on the same clock
 axis, explicitly separating instruction callback boundaries from bus-access
 phases. No CPU/PPU timing, private screenshot baseline or publication gate was
 changed by this experiment; the unresolved release validation stays on hold.
+
+
+The common-clock follow-up (`scripts/cgb_stat_clock_probe.py`) anchors both
+cores immediately before the authored instruction at PC=0x1000. Every event
+uses normalized 8-MHz clocks relative to that boundary; no offsets are fitted.
+The existing GBB control-write observer timestamps accepted LCDC writes.
+The separate pinned SameBoy internal-ABI adapter reads `cycles_since_run`
+inside its LCD-status callback and adds the sum of preceding `GB_run` clocks.
+Read/write/execution callbacks and instruction-step boundaries observe IF
+without advancing time. An IF rise is reported as
+`(last_clear_observation, first_pending_observation]`; callback observations do
+not claim to locate the physical PPU edge within that interval.
+
+The 64 earlier cases plus a pure-NOP IRQ calibration at each speed produce
+66 comparisons and 396 bounded traces. Two observer-enabled runs per core
+repeat. Final registers, the WRAM witness, normalized clock and serialized
+state fingerprints agree with an observer-disabled run in every case.
+SameBoy serializes an unused host-initialized RTC epoch for these ROM-only
+cartridges. Only its eight timestamp bytes are masked in the copied serialized
+buffer before fingerprinting; the emulator's timestamp and all other state
+are untouched. An independent eight-run inspection found that this field alone
+varied before masking. GBB fingerprints its entire serialized state.
+
+The observed LCD-write phase difference is four CPU clocks at both speeds:
+
+| Event, relative 8-MHz clocks | GBB normal | SameBoy normal | GBB double | SameBoy double |
+| --- | ---: | ---: | ---: | ---: |
+| Accepted LCD-enable write | 40 | 32 | 20 | 16 |
+| NOP first-pending IF interval | (936, 944] | (928, 936] | (920, 924] | (916, 920] |
+| NOP dispatch start | 944 | 936 | 924 | 920 |
+| NOP dispatch end | 984 | 976 | 944 | 940 |
+| NOP stacked return PC | 0x1075 | 0x1074 | 0x10E6 | 0x10E5 |
+
+All 34 hardware cases show the same accepted-write separation. In the NOP
+calibration, request intervals relative to the accepted LCD write agree:
+(896, 904] normally and (900, 904] at double speed. Both cores begin service at
+the first pending NOP boundary and take 20 CPU clocks for dispatch. In the
+original normal-speed phase-zero loop, the reference is already pending at
+relative clock 936, while GBB is still clear at 936. GBB executes another
+`INC BC`, reaches BC=17 and dispatches at 952; SameBoy dispatches at 936 with
+BC=16. Their intervals are disjoint on the shared instruction-origin axis.
+This is direct evidence of a request-visibility separation preceding dispatch,
+so a dispatch-only correction would not address the observed sequence.
+
+The first-vector opcode callback is deliberately separate: GBB calls it after
+the opcode fetch cycle, whereas SameBoy calls it before flushing that fetch's
+pending cycle. In the NOP calibration those callbacks occur at 992/976 normally
+and 948/940 at double speed. These numbers must not be compared as matching
+physical-fetch phases or used to add another arbitrary timing compensation.
+
+Exactly 48/66 architectural witnesses match: every software-request control
+matches, the original 16 hardware mismatches persist, and both NOP return PCs
+differ by one. The paired tool retains exit 1 and `qualification: false`.
+Source hashes, per-case summaries and representative full timelines are in
+[`cgb-stat-clock.json`](../tests/fixtures/external-reference/cgb-stat-clock.json).
+The LCD accepted-write phase is now the concrete correction target, with bus
+read-phase controls required alongside it: prior CPU-visible IF-read agreement
+cannot independently certify asynchronous request timing. The next step is to
+validate LCDC write timing across instruction forms and coordinate any fix with
+IO read sampling and conformance tests, rather than shifting STAT edges alone.
+No production CPU/PPU timing, private baseline or release gate has changed;
+publication remains on hold.
+
+
+The subsequent LCD bus-phase experiment tests four write addressing forms
+against the same pinned Core, plus three IF-read forms padded before the read
+to have the same 16-clock duration and final memory cycle. All eight write
+cases expose a four-CPU-clock accepted-write separation; all 78 read cases and
+52 cross-form relations already agree. The authored cartridges contain no
+proprietary logo or artwork. Their source and before/candidate observations are
+in [`cgb-lcd-bus-phase.json`](../tests/fixtures/external-reference/cgb-lcd-bus-phase.json).
+
+A general native-CGB IO experiment sampled IO at the start of its final cycle,
+paired read and write changes, and retained the existing interrupt stack-write
+phase. It matched all eight writes, all 78 reads, all 66 first-vector cases and
+all 48 LCD-startup comparisons. The 4,928 hardware-model cases had zero
+regressions. However, the broader validation rejected it: one of 271 public
+contracts failed because the DMA snapshot before RET was no longer at the
+recorded boundary, and a previously exact private title comparison diverged
+at all three capture checkpoints. No expected results were relaxed to make
+these changes pass.
+
+The private regression persists after applying the same diagnostic startup
+reset to both cores (APU off, LCD restart, DIV reset, explicit JOYP/IE/IF). This
+is a diagnostic change to initial conditions, not a replacement reference or
+an approved baseline. Under that control the previous CPU gives three exact
+images; the general IO and PPU-read variants differ by 52, 374 and 329 pixels.
+A narrower LCD/IF-only variant restores those three exact images but matches
+only 79/86 previously passing request/read-phase controls. Keeping the STAT
+and LY read changes matches 86/86 but retains the private regression. Thus the
+observed LCD-write separation alone does not establish a safe correction of
+the coupled CPU/PPU interface. Early-write/read timing that is correct for the
+first mode-2 witness is insufficient evidence for later STAT/LY polling.
+
+The experimental IO timing changes were reverted. The general and two narrowed patches
+are retained under `tests/fixtures/research/` solely to reproduce these rejected
+experiments; they are never compiled by the build. The public fixture explicitly
+sets `candidate_accepted: false` and records the rejection. Private screenshots,
+ROMs, original boot firmware and private baseline hashes are not included.
+
+The rejected candidate's full private run completed all 100 ROMs and 300
+captures and differed from the approved baseline at 45 snapshots across 26
+ROMs. Its initial reference image counts used the unsynchronized helper and
+are superseded by the capture correction documented below; they do not
+validate production HEAD. Original-boot handoffs also expose cartridge-dependent DIV values that
+our fixed fast-start state does not reproduce, but the uniform-startup control
+shows that startup differences alone cannot excuse the new runtime regression.
+Ordinary HBlank/VBlank STAT and LY controls remain useful follow-up coverage,
+retaining the existing first-line controls and private counterexample. The
+release gate remains on hold and its baseline is unchanged.
+
+
+A separate native interrupt-fetch correction resolves the architectural
+mismatch without moving IO accesses or PPU edges. This core samples bus data
+at the end of a fetch cycle. When a native-CGB request arrives during that
+cycle, it now discards the prefetched opcode, restores its original PC for the
+stacked return address, and consumes the fetch as the first four of the twenty
+entry clocks. It does not execute that instruction or report it in executed
+CPU history. Existing monochrome/compatibility recognition and interrupt
+priority arbitration remain unchanged. No new persistent CPU state or save
+version is needed. A host-only IRQ observer records the recognition point and
+whether the fetch was already consumed; it does not alter emulation.
+
+The final paired runs match 64/64 vector cases, 66/66 common-clock witnesses
+including both NOP calibrations, 48/48 LCD-startup cases, 86/86 request-phase
+controls and all 78 equal-cost read cases. The eight write-form architectural
+witnesses also match, while the raw internal LCD-write phase separation remains
+visible. Eighteen common-clock cases recognize the request after a discarded
+fetch; all other cases retain their earlier recognition point. In the normal
+phase-zero example, both dispatch intervals are 936..976 relative 8-MHz clocks
+and both stack PC=0x1004 with BC=16. GBB observes the request during its fetch
+at 944; the reference begins with it pending at 936. Those sample/callback
+phases are explicit, not fitted offsets. Forcing all internal bus timestamps
+to match is unnecessary for matching the architectural event.
+
+Direct CGB0/CGB-C/CGB-E/alias tests cover STAT and timer requests during the
+fetch at both native speeds, plus compatibility controls. They verify the
+20-clock entry, single stacked original PC, untouched BC, excluded discarded
+instruction, observer-disabled equivalence and save/load replay. The old
+recognition algorithm fails all sixteen native boundary witnesses. CLI history
+also excludes the discarded opcode. The hardware matrix retains 4,928 cases
+with zero regressions; the full headless contracts validate the final build.
+The general IO alternatives above remain rejected; the narrower IRQ correction
+also preserves the private uniform-startup counterexample at three exact
+snapshots. Historical before/candidate records remain in the fixtures.
+
+The private elapsed-clock reference helper had a separate capture defect:
+it wrote pixels before synchronizing SameBoy's deferred PPU work. Reading LY
+only while subsequently printing metadata was too late. The public adapter
+`scripts/sameboy_elapsed_capture.c` now flushes that work before writing pixels.
+An independently authored ROM reproduces 47 changed pixels at one of eight
+fixed clock targets, with unchanged elapsed clocks and legacy metadata and
+two repeatable synchronized captures. Five malformed target lists fail closed.
+This is a capture correction, not a time shift or change of palette. All 45
+commercial reference targets were rerun twice with identical target/actual
+clocks, PC, LY and LCDC to the unsynchronized run. The earlier unsynchronized
+image-match counts are superseded.
+
+With the retained fetch correction and synchronized reference, all 100 private
+ROMs complete their 300 captures. The approved baseline still differs at 45
+snapshots across 26 ROMs. Thirty now match the independent reference exactly;
+fifteen remain unresolved across ten ROMs. These are private-input checks,
+not publicly reproducible conformance results. An already-unresolved Robopon
+capture changes from four to twelve differing pixels at the same reference
+clock; it remains unqualified. No private baseline was updated and publication
+remains on hold. Next isolate the remaining startup/peripheral-state and
+framebuffer differences, retaining original-boot handoff evidence and the
+synchronized capture anchor. Matching this focused IRQ scope does not qualify
+those remaining commercial snapshots or the release as a whole.

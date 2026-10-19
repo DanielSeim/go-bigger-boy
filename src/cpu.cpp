@@ -153,6 +153,14 @@ unsigned Cpu::step(MemoryBus& bus) {
 unsigned Cpu::execute_instruction(MemoryBus& bus) {
     const auto opcode_address = registers_.pc;
     const auto opcode = fetch8(bus);
+    // This core samples memory at the end of the fetch cycle. Native CGB
+    // requests arriving during that cycle discard the prefetched opcode;
+    // its cycle forms the first four clocks of interrupt entry, not an
+    // executed instruction. Keep the monochrome/compatibility path intact.
+    if (ime_ && bus.cgb_mode_ && pending_interrupts(bus) != 0) {
+        registers_.pc = opcode_address;
+        return service_interrupt(bus, false, true);
+    }
     if (instruction_observer_) instruction_observer_(instruction_observer_context_, opcode_address, opcode);
 
     if (opcode >= 0x40 && opcode <= 0x7F && opcode != 0x76) {
@@ -619,7 +627,11 @@ std::uint8_t Cpu::pending_interrupts(const MemoryBus& bus) const noexcept {
 }
 
 unsigned Cpu::service_interrupt(MemoryBus& bus,
-                                const bool from_halt) noexcept {
+                                const bool from_halt, const bool opcode_fetched) noexcept {
+    if (interrupt_observer_) {
+        interrupt_observer_(interrupt_observer_context_, registers_.pc,
+                            pending_interrupts(bus), opcode_fetched);
+    }
     ime_ = false;
     ime_enable_delay_ = 0;
     halted_ = false;
@@ -627,7 +639,7 @@ unsigned Cpu::service_interrupt(MemoryBus& bus,
     speed_switch_cycles_ = 0;
     speed_switch_resume_ = false;
     halt_bug_ = false;
-    idle(bus, 8);
+    idle(bus, opcode_fetched ? 4 : 8);
     --registers_.sp;
     write8(bus, registers_.sp, static_cast<std::uint8_t>(registers_.pc >> 8));
     --registers_.sp;

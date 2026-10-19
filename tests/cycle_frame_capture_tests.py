@@ -421,6 +421,28 @@ class CycleFrameCaptureTests(unittest.TestCase):
         self.assertEqual(history[-1]['sp_before'], history[-1]['sp_after'])
         self.assertNotEqual(history[-1]['next_pc'], '0050')
 
+    def test_native_interrupt_discards_prefetch_from_executed_history(self):
+        # DIV reset is T0. TAC is enabled at T20, overflow occurs at T32,
+        # and reload requests the timer interrupt at T36, during the NOP fetch.
+        program = LCD_OFF + bytes.fromhex(
+            '31 fe ff 3e 04 ea ff ff af e0 0f e0 07 '
+            '3e ff e0 05 af e0 06 fb 00 af e0 04 3e 05 e0 07')
+        bc_pc = 0x150 + len(program)
+        program += bytes.fromhex('01 00 00')
+        discarded_pc = 0x150 + len(program)
+        program += bytes.fromhex('00 18 fd')
+        rom = cartridge(program, color=True)
+        handler = bytes.fromhex('f3 af e0 07 ea ff ff 76 18 fd')
+        rom[0x50:0x50+len(handler)] = handler
+        self.rom.write_bytes(rom)
+        result = self.capture(2, '--model','cgb-e','--trace-first-pc','0x50')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        first, = self.flow_lines(result, 'CPU_FIRST_PC')
+        self.assertEqual(first['transition'], 'interrupt')
+        history = self.flow_lines(result, 'CPU_FIRST_PC_HISTORY')
+        self.assertEqual((history[-1]['pc'],history[-1]['opcode']), (f'{bc_pc:04x}','01'))
+        self.assertNotIn(f'{discarded_pc:04x}', [r['pc'] for r in history])
+
     def test_flow_interrupt_and_dma_fetch(self):
         program = LCD_OFF + bytes((0x3E,1,0xEA,0xFF,0xFF,0xE0,0x0F,0xFB,0x00)) + LOOP
         rom = cartridge(program);rom[0x40:0x42] = bytes((0xF3,0x76))

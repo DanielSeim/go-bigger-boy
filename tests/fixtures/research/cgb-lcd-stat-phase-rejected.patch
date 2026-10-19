@@ -1,0 +1,46 @@
+--- a/src/cpu.cpp
++++ b/src/cpu.cpp
+@@ -153,14 +153,6 @@
+ unsigned Cpu::execute_instruction(MemoryBus& bus) {
+     const auto opcode_address = registers_.pc;
+     const auto opcode = fetch8(bus);
+-    // This core samples memory at the end of the fetch cycle. Native CGB
+-    // requests arriving during that cycle discard the prefetched opcode;
+-    // its cycle forms the first four clocks of interrupt entry, not an
+-    // executed instruction. Keep the monochrome/compatibility path intact.
+-    if (ime_ && bus.cgb_mode_ && pending_interrupts(bus) != 0) {
+-        registers_.pc = opcode_address;
+-        return service_interrupt(bus, false, true);
+-    }
+     if (instruction_observer_) instruction_observer_(instruction_observer_context_, opcode_address, opcode);
+ 
+     if (opcode >= 0x40 && opcode <= 0x7F && opcode != 0x76) {
+@@ -708,6 +700,12 @@
+ }
+ 
+ std::uint8_t Cpu::read8(MemoryBus& bus, const std::uint16_t address) noexcept {
++    if (bus.cgb_mode_ && (address == 0xFF0F || address == 0xFF41 || address == 0xFF44)) {
++        const auto value = bus.cpu_read8(address);
++        if (address == 0xFF0F) { idle(bus, 3); idle(bus, 1); }
++        else idle(bus, 4);
++        return value;
++    }
+     // IF is sampled before the final T-cycle's STAT edge. Preserve the normal
+     // final-cycle value for ordinary reads, but retain the pre-edge value when
+     // a STAT request was raised by that final cycle.
+@@ -733,8 +731,13 @@
+ 
+ void Cpu::write8(MemoryBus& bus, const std::uint16_t address,
+                  const std::uint8_t value) noexcept {
+-    idle(bus, 4);
+-    bus.cpu_write8(address, value);
++    if (bus.cgb_mode_ && address == 0xFF40) {
++        bus.cpu_write8(address, value);
++        idle(bus, 4);
++    } else {
++        idle(bus, 4);
++        bus.cpu_write8(address, value);
++    }
+ }
+ 
+ void Cpu::push(MemoryBus& bus, const std::uint16_t value) noexcept {

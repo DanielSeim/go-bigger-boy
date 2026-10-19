@@ -349,10 +349,9 @@ GBB boot image and authored cartridges; no proprietary inputs are needed.
 Twenty-four cartridges cover VBlank/STAT, polling/IRQ, both speeds and three
 pre-enable NOP delays. Frame checkpoints 4 and 8 must contain the same frozen
 WRAM log, with two takes per core. These are completed PPU-frame checkpoints,
-not `--cycle-frame-capture` intervals. The current paired run returns exit 1:
-42 of 48 event comparisons match; normal-speed STAT IRQ counters differ.
-This research failure is retained separately from the passing offline tooling
-contract. See [accuracy](accuracy.md) for the measured scope and limits.
+not `--cycle-frame-capture` intervals. The retained pre-correction evidence
+matched 42/48; native interrupt-fetch recognition now matches all 48 and exits
+0. See [accuracy](accuracy.md) for the measured scope and limits.
 
 `gameboy_cgb_stat_request_phase_probe_contract` checks the finer first-line
 IF/mode/LY read sweep and LCD-off software-STAT-request controls. Run the paired
@@ -381,8 +380,9 @@ python3 scripts/cgb_stat_vector_probe.py \
 The 64 authored cartridges cover hardware STAT versus LCD-off software IF,
 two foreground loops, eight post-trigger NOP phases and both CPU speeds.
 Two captures per core at completed PPU frame 4 must repeat. The paired run
-currently exits 1: 48/64 comparisons match, including every software control.
-The passing offline contract validates the tooling, not reference parity.
+now matches all 64 comparisons and exits 0. Historical 48/64 results remain
+recorded separately. The offline contract validates tooling, while the paired
+run records the measured architectural agreement.
 
 
 `gameboy_cgb_stat_boundary_read_probe_contract` checks a complementary IF-read
@@ -404,6 +404,107 @@ The paired run matches all 288 cases and exits 0. Both pending and non-pending
 primary IF reads are covered at each speed, with all 1,152 raw captures checked.
 This does not resolve the separate first-vector mismatches.
 See [accuracy](accuracy.md) for the measured scope and limits.
+
+
+`gameboy_cgb_stat_clock_probe_contract` exercises the standalone
+`gbb_stat_clock_trace` observer in the headless build, validates the bounded
+trace schema and checks observer-disabled controls. It needs no external core.
+The paired research run additionally needs the separate
+`scripts/sameboy_stat_clock_trace.c` adapter. Unlike the existing public-API
+capture adapter, this tool reads SameBoy's **internal ABI** for callback clocks.
+Build it only against the pinned 1.0.3 checkout at
+`208ba4afabffab9edde416f2dbb8ae459e34adb8` and its stock full-featured Core library;
+its layout guard requires internal struct version 15. Headers and library must
+have identical build options. Do not mix `GB_DISABLE_*` configurations.
+
+```sh
+cmake -S . -B build-headless -DGAMEBOY_BUILD_TESTS=ON -DGAMEBOY_BUILD_SDL=OFF
+cmake --build build-headless --target gameboy_stat_clock_trace
+cc -std=c11 -O3 -Wall -Wextra -Werror -Wno-multichar -DGB_INTERNAL \
+  -I /path/to/SameBoy scripts/sameboy_stat_clock_trace.c \
+  -L /path/to/SameBoy/build/lib -lsameboy \
+  -Wl,-rpath,/path/to/SameBoy/build/lib -lm -o /tmp/sameboy-stat-clock
+python3 scripts/cgb_stat_clock_probe.py \
+  --gbb-clock-trace build-headless/gbb_stat_clock_trace \
+  --sameboy-clock-trace /tmp/sameboy-stat-clock \
+  --output /path/to/new-stat-clock-results
+```
+
+Both adapters take `ROM BOOT [--no-observers]`, consume the same owned boot,
+limit execution to 20 million normalized 8-MHz clocks and retain at most 512
+steps. A stalled clock or exhausted log fails with exit 3. They write bounded
+JSON to stdout and create no saves. The probe stores those bounded records in
+its chosen output directory. Request intervals are lower-exclusive and
+upper-inclusive observations, not exact PPU edge timestamps. Opcode callbacks
+have explicitly different phases in the two cores.
+
+Sixty-six cases cover the prior 64-case vector grid plus a NOP calibration at
+each speed. Each core runs twice with observers and once without: 396 traces.
+Within each core, final registers, WRAM, normalized clocks and serialized-state
+fingerprints must agree with its observer-disabled run. Only the unused
+host-initialized RTC timestamp is masked in a **copied** SameBoy serialization,
+restricted to these 32-KiB ROM-only cartridges; no emulated state is modified.
+The paired result now matches all 66 architectural witnesses and exits 0.
+The native IRQ observer records whether recognition occurred after a discarded
+fetch. That fetch is included in the 20 entry clocks. The IO access phases
+remain unchanged; their internal write-clock separation is still reported.
+A disabled-observer run can miss the transient IF rise and acknowledgement
+within one entry step; it records that observation as unavailable, not a
+fabricated timestamp. See [accuracy](accuracy.md) for the implementation-phase
+interpretation and the retained historical results.
+
+
+`gameboy_cgb_lcd_bus_phase_probe_contract` checks four independently authored
+LCD-write forms and three equal-cost IF-read forms. Run the optional measurement:
+
+```sh
+python3 scripts/cgb_lcd_bus_phase_probe.py \
+  --gbb-clock-trace build-headless/gbb_stat_clock_trace \
+  --sameboy-clock-trace /tmp/sameboy-stat-clock \
+  --runner build-headless/gbb_test_runner \
+  --sameboy-capture /path/to/sameboy-capture \
+  --output /path/to/new-lcd-bus-phase-results
+```
+
+The write forms are `LDH (a8),A`, `LD (a16),A`, `LD (C),A` and `LD (HL),A`.
+Their NOP foregrounds exit through the same terminal IRQ logger. The three read
+forms use preceding NOPs to align their memory-read cycle and consume exactly
+16 CPU clocks. Thirteen delay phases at both speeds give 78 read comparisons;
+52 additional relations require agreement across forms within each core.
+Observer-enabled and disabled write runs retain the serialized-state checks.
+
+IO access timing is unchanged: all 78 read cases and eight architectural write
+witnesses match. The internal LCD-write separation remains explicit under
+`lcd_phase_match`; it is not silently converted into a timestamp match.
+Whole-IO and PPU-read phase changes were rejected after a private counterexample
+and a DMA snapshot contract failure. Narrower alternatives regressed previously
+matching STAT/LY controls. The code under
+`tests/fixtures/research/*phase-rejected.patch` is **rejected research**, excluded
+from every build. These patches disable the retained fetch-recognition fix in
+an isolated copy and reproduce the alternative timing experiments; the fixture
+records the required base CPU source hash. They must not be added to production.
+Passing a focused research CLI does not qualify release parity.
+
+Elapsed-clock framebuffer comparisons use the separate public-API adapter:
+
+```sh
+cc -std=c11 -O3 -Wall -Wextra -Werror -I /path/to/SameBoy \
+  scripts/sameboy_elapsed_capture.c -L /path/to/SameBoy/build/lib -lsameboy \
+  -Wl,-rpath,/path/to/SameBoy/build/lib -lm -o /tmp/sameboy-elapsed-capture
+/tmp/sameboy-elapsed-capture owned.gbc owned-boot.bin cgb-e \
+  900000,900128,900256 /path/to/new-output-prefix
+```
+
+It anchors clocks at boot unmap with PC=0100, counts only normal VBlanks, and
+synchronizes deferred PPU work before consuming pixels via a public LY read.
+No additional CPU instruction, frame or fitted offset is introduced. Metadata
+records `ppu_synchronized`, `pixels_flushed`, requested and actual clocks.
+An owned-ROM eight-target calibration reproduces 47 stale pixels before the
+flush, with identical CPU clocks and legacy metadata; repeated images agree.
+The adapter accepts at most eight positive increasing targets and refuses
+existing output files. Original boot images are external private inputs when
+used for commercial comparisons; the calibration uses only the owned boot.
+See [accuracy](accuracy.md) for current results and release limits.
 
 
 `gameboy_cgb_reti_dispatch_probe_contract` adds software-requested RETI/RET/EI

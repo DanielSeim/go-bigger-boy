@@ -34,6 +34,9 @@ public:
     void debug_set_cpu_instruction_observer(Cpu::InstructionObserver observer, void* context) noexcept {
         cpu_.debug_set_instruction_observer(observer, context);
     }
+    void debug_set_cpu_interrupt_observer(Cpu::InterruptObserver observer, void* context) noexcept {
+        cpu_.debug_set_interrupt_observer(observer, context);
+    }
     void set_cpu_registers(CpuRegisters registers) noexcept;
     [[nodiscard]] const MemoryBus& bus() const noexcept;
     [[nodiscard]] MemoryBus& bus() noexcept;

@@ -1,0 +1,3664 @@
+{
+  "schema": "gbb-cgb-lcd-bus-phase-evidence-v1",
+  "qualification": false,
+  "date": "2026-10-19",
+  "sameboy_commit": "208ba4afabffab9edde416f2dbb8ae459e34adb8",
+  "sameboy_library_sha256": "1ba66d2d813d99267b1be27cbc4642d624bbb8c7370e881546b1223bec3cf9fb",
+  "source_sha256": {
+    "scripts/cgb_lcd_bus_phase_probe.py": "185a421ff60fe449748f7b21e271424006270fc631b8980de3141b15905cbbd5",
+    "scripts/cgb_stat_clock_probe.py": "abcafa4ea3692a748f6fad46fe4f7530e977e5f4ec906c2c6fa1b38711ec04d7",
+    "scripts/cgb_stat_request_phase_probe.py": "7ea56b4361f424ce018f239a39d62c2dc188b0d1e75b21817fd29c5f3bb948ed",
+    "scripts/cgb_stat_vector_probe.py": "4ac819092486b8da94291e83ffb1243689ab052cc24bfb11f8b9a8bf5e4aee99",
+    "scripts/cgb_lcd_startup_probe.py": "ad2ccc2372b3bf018ec67b08baf746d0e76177366f284ce27071d99acb540690",
+    "scripts/cgb_pcm_stat_probe.py": "cd48efb1e0b4f742146af8297790da16fa649bde5d469e3e45abdb8be1e8911a",
+    "scripts/cgb_frame_anchor_probe.py": "64ebef18d72fe32b55c9dcebfb6a9279459a5584123d7b3872cd2e62c41fd39c",
+    "scripts/gbb_stat_clock_trace.cpp": "cd3f3c0e5d3516792d351e242c2cfd178230afbaa4807626c4d5c80f47c3712f",
+    "scripts/sameboy_stat_clock_trace.c": "fd23a62adf14cf83262bf932a6794ff381e77008677eeb0c643283066d1d59d3",
+    "scripts/stat_clock_trace.h": "9399133f7b29bbc47b6d2985242c71483b3f410d62cf7d3bb9297a8ead78b04b"
+  },
+  "cpu_before_sha256": "7322d1fc90f87a0c826eee71e308104d8c8227138d11251c6af70728b01cade6",
+  "binaries_before": {
+    "gbb_clock": "00d60d83690507c7ba3ef4b4be061beab0c9b57b282e997a04ae9ac4b86314c0",
+    "sameboy_clock": "052673d747ee37abca0e8dc62d0be00011f41f12b72e20db275ddcc6cb9a6e58",
+    "runner": "46c0f035af62a1febd8a47d3bee5f4a79ba25188b3e1dfb7ef64557f338366d3",
+    "capture": "ccc958008c9d29fc5bee4b39d1c02bd0a48b5d7cdfd58e1a605bc9d5405aae10"
+  },
+  "binaries_after": {
+    "gbb_clock": "3c844005d9f90353f2009cc677ac0d99cf1a0a020f9f2c4797706df8ba2d6880",
+    "sameboy_clock": "052673d747ee37abca0e8dc62d0be00011f41f12b72e20db275ddcc6cb9a6e58",
+    "runner": "b11fc2348e629dd138cd631ae51ddef59e5cf1f937126d3b1dc545e8a370ac8f",
+    "capture": "ccc958008c9d29fc5bee4b39d1c02bd0a48b5d7cdfd58e1a605bc9d5405aae10"
+  },
+  "boot_sha256": "c8937124cd7dcafc036dcad3ad46008ea57b4e76abfa3da6012ff8bdbd7687d0",
+  "summary": {
+    "write_cases": 8,
+    "write_matches_before": 0,
+    "write_matches_after": 8,
+    "read_cases": 78,
+    "read_matches_before": 78,
+    "read_matches_after": 78,
+    "equal_cost_read_relations": 52,
+    "all_repeatable": true,
+    "all_observer_equivalent": true,
+    "clock_probe_matches_after": 66,
+    "clock_probe_cases": 66,
+    "lcd_startup_matches_after": 48,
+    "lcd_startup_cases": 48,
+    "hardware_model_cases": 4928,
+    "hardware_model_regressions": 0,
+    "candidate_public_contract_failures": 1,
+    "if_lcd_only_request_phase_matches": 79,
+    "request_phase_cases": 86,
+    "ppu_only_request_phase_matches": 86
+  },
+  "scope": "Rejected IO timing experiments; no shifts of IO accesses or PPU edges are retained. A separate native interrupt-fetch correction is validated under retained_correction. Raw LCD write-clock separation stays explicit; architectural dispatch and witnesses match. Commercial release validation remains incomplete.",
+  "writes": [
+    {
+      "form": "ldh",
+      "double_speed": false,
+      "rom_sha256": "4bc6d08e7f3017d5516d542e8cf2368901cddb3654f481d4d3d693f107416ec3",
+      "before": {
+        "lcd_accept": 40,
+        "request_interval": [
+          936,
+          944
+        ],
+        "dispatch_begin": 944,
+        "dispatch_end": 984,
+        "dispatch_bc": 0,
+        "return_pc": 4213,
+        "vector_opcode": 992,
+        "opcode_callback_phase": "after_opcode_fetch_cycle",
+        "witness": [
+          0,
+          0,
+          117,
+          16,
+          2,
+          1,
+          3,
+          0,
+          0,
+          90
+        ],
+        "steps": 142,
+        "repeatable": true,
+        "observer_equivalent": true
+      },
+      "after": {
+        "lcd_accept": 32,
+        "request_interval": [
+          928,
+          936
+        ],
+        "dispatch_begin": 936,
+        "dispatch_end": 976,
+        "dispatch_bc": 0,
+        "return_pc": 4212,
+        "vector_opcode": 984,
+        "opcode_callback_phase": "after_opcode_fetch_cycle",
+        "witness": [
+          0,
+          0,
+          116,
+          16,
+          2,
+          1,
+          3,
+          0,
+          0,
+          90
+        ],
+        "steps": 141,
+        "repeatable": true,
+        "observer_equivalent": true
+      },
+      "reference": {
+        "lcd_accept": 32,
+        "request_interval": [
+          928,
+          936
+        ],
+        "dispatch_begin": 936,
+        "dispatch_end": 976,
+        "dispatch_bc": 0,
+        "return_pc": 4212,
+        "vector_opcode": 976,
+        "opcode_callback_phase": "before_opcode_fetch_pending_cycle",
+        "witness": [
+          0,
+          0,
+          116,
+          16,
+          2,
+          1,
+          3,
+          0,
+          0,
+          90
+        ],
+        "steps": 141,
+        "repeatable": true,
+        "observer_equivalent": true
+      }
+    },
+    {
+      "form": "absolute",
+      "double_speed": false,
+      "rom_sha256": "12e41c5d8dd8ec7a616571f0b91e0ccd8d0b5a016430695c4184510cffde7070",
+      "before": {
+        "lcd_accept": 48,
+        "request_interval": [
+          944,
+          952
+        ],
+        "dispatch_begin": 952,
+        "dispatch_end": 992,
+        "dispatch_bc": 0,
+        "return_pc": 4214,
+        "vector_opcode": 1000,
+        "opcode_callback_phase": "after_opcode_fetch_cycle",
+        "witness": [
+          0,
+          0,
+          118,
+          16,
+          2,
+          1,
+          3,
+          0,
+          0,
+          90
+        ],
+        "steps": 142,
+        "repeatable": true,
+        "observer_equivalent": true
+      },
+      "after": {
+        "lcd_accept": 40,
+        "request_interval": [
+          936,
+          944
+        ],
+        "dispatch_begin": 944,
+        "dispatch_end": 984,
+        "dispatch_bc": 0,
+        "return_pc": 4213,
+        "vector_opcode": 992,
+        "opcode_callback_phase": "after_opcode_fetch_cycle",
+        "witness": [
+          0,
+          0,
+          117,
+          16,
+          2,
+          1,
+          3,
+          0,
+          0,
+          90
+        ],
+        "steps": 141,
+        "repeatable": true,
+        "observer_equivalent": true
+      },
+      "reference": {
+        "lcd_accept": 40,
+        "request_interval": [
+          936,
+          944
+        ],
+        "dispatch_begin": 944,
+        "dispatch_end": 984,
+        "dispatch_bc": 0,
+        "return_pc": 4213,
+        "vector_opcode": 984,
+        "opcode_callback_phase": "before_opcode_fetch_pending_cycle",
+        "witness": [
+          0,
+          0,
+          117,
+          16,
+          2,
+          1,
+          3,
+          0,
+          0,
+          90
+        ],
+        "steps": 141,
+        "repeatable": true,
+        "observer_equivalent": true
+      }
+    },
+    {
+      "form": "c",
+      "double_speed": false,
+      "rom_sha256": "259a2f67a3ae5d75075c47e7e27312a2270d4560f5bd8cce4a9c178c5a40511a",
+      "before": {
+        "lcd_accept": 48,
+        "request_interval": [
+          944,
+          952
+        ],
+        "dispatch_begin": 952,
+        "dispatch_end": 992,
+        "dispatch_bc": 0,
+        "return_pc": 4214,
+        "vector_opcode": 1000,
+        "opcode_callback_phase": "after_opcode_fetch_cycle",
+        "witness": [
+          0,
+          0,
+          118,
+          16,
+          2,
+          1,
+          3,
+          0,
+          0,
+          90
+        ],
+        "steps": 141,
+        "repeatable": true,
+        "observer_equivalent": true
+      },
+      "after": {
+        "lcd_accept": 40,
+        "request_interval": [
+          936,
+          944
+        ],
+        "dispatch_begin": 944,
+        "dispatch_end": 984,
+        "dispatch_bc": 0,
+        "return_pc": 4213,
+        "vector_opcode": 992,
+        "opcode_callback_phase": "after_opcode_fetch_cycle",
+        "witness": [
+          0,
+          0,
+          117,
+          16,
+          2,
+          1,
+          3,
+          0,
+          0,
+          90
+        ],
+        "steps": 140,
+        "repeatable": true,
+        "observer_equivalent": true
+      },
+      "reference": {
+        "lcd_accept": 40,
+        "request_interval": [
+          936,
+          944
+        ],
+        "dispatch_begin": 944,
+        "dispatch_end": 984,
+        "dispatch_bc": 0,
+        "return_pc": 4213,
+        "vector_opcode": 984,
+        "opcode_callback_phase": "before_opcode_fetch_pending_cycle",
+        "witness": [
+          0,
+          0,
+          117,
+          16,
+          2,
+          1,
+          3,
+          0,
+          0,
+          90
+        ],
+        "steps": 140,
+        "repeatable": true,
+        "observer_equivalent": true
+      }
+    },
+    {
+      "form": "hl",
+      "double_speed": false,
+      "rom_sha256": "c19efd4b78869f6616e7f9a8c0727cd24c7042d8f04ef063e7eca638ac30fb3e",
+      "before": {
+        "lcd_accept": 56,
+        "request_interval": [
+          952,
+          960
+        ],
+        "dispatch_begin": 960,
+        "dispatch_end": 1000,
+        "dispatch_bc": 0,
+        "return_pc": 4215,
+        "vector_opcode": 1008,
+        "opcode_callback_phase": "after_opcode_fetch_cycle",
+        "witness": [
+          0,
+          0,
+          119,
+          16,
+          2,
+          1,
+          3,
+          0,
+          0,
+          90
+        ],
+        "steps": 141,
+        "repeatable": true,
+        "observer_equivalent": true
+      },
+      "after": {
+        "lcd_accept": 48,
+        "request_interval": [
+          944,
+          952
+        ],
+        "dispatch_begin": 952,
+        "dispatch_end": 992,
+        "dispatch_bc": 0,
+        "return_pc": 4214,
+        "vector_opcode": 1000,
+        "opcode_callback_phase": "after_opcode_fetch_cycle",
+        "witness": [
+          0,
+          0,
+          118,
+          16,
+          2,
+          1,
+          3,
+          0,
+          0,
+          90
+        ],
+        "steps": 140,
+        "repeatable": true,
+        "observer_equivalent": true
+      },
+      "reference": {
+        "lcd_accept": 48,
+        "request_interval": [
+          944,
+          952
+        ],
+        "dispatch_begin": 952,
+        "dispatch_end": 992,
+        "dispatch_bc": 0,
+        "return_pc": 4214,
+        "vector_opcode": 992,
+        "opcode_callback_phase": "before_opcode_fetch_pending_cycle",
+        "witness": [
+          0,
+          0,
+          118,
+          16,
+          2,
+          1,
+          3,
+          0,
+          0,
+          90
+        ],
+        "steps": 140,
+        "repeatable": true,
+        "observer_equivalent": true
+      }
+    },
+    {
+      "form": "ldh",
+      "double_speed": true,
+      "rom_sha256": "7cc0a382acac3a84f7e30534628c8c252c0f1540b476071ccd2a9b53aabb7683",
+      "before": {
+        "lcd_accept": 20,
+        "request_interval": [
+          920,
+          924
+        ],
+        "dispatch_begin": 924,
+        "dispatch_end": 944,
+        "dispatch_bc": 0,
+        "return_pc": 4326,
+        "vector_opcode": 948,
+        "opcode_callback_phase": "after_opcode_fetch_cycle",
+        "witness": [
+          0,
+          0,
+          230,
+          16,
+          4,
+          1,
+          2,
+          0,
+          128,
+          90
+        ],
+        "steps": 255,
+        "repeatable": true,
+        "observer_equivalent": true
+      },
+      "after": {
+        "lcd_accept": 16,
+        "request_interval": [
+          916,
+          920
+        ],
+        "dispatch_begin": 920,
+        "dispatch_end": 940,
+        "dispatch_bc": 0,
+        "return_pc": 4325,
+        "vector_opcode": 944,
+        "opcode_callback_phase": "after_opcode_fetch_cycle",
+        "witness": [
+          0,
+          0,
+          229,
+          16,
+          4,
+          1,
+          2,
+          0,
+          128,
+          90
+        ],
+        "steps": 254,
+        "repeatable": true,
+        "observer_equivalent": true
+      },
+      "reference": {
+        "lcd_accept": 16,
+        "request_interval": [
+          916,
+          920
+        ],
+        "dispatch_begin": 920,
+        "dispatch_end": 940,
+        "dispatch_bc": 0,
+        "return_pc": 4325,
+        "vector_opcode": 940,
+        "opcode_callback_phase": "before_opcode_fetch_pending_cycle",
+        "witness": [
+          0,
+          0,
+          229,
+          16,
+          4,
+          1,
+          2,
+          0,
+          128,
+          90
+        ],
+        "steps": 254,
+        "repeatable": true,
+        "observer_equivalent": true
+      }
+    },
+    {
+      "form": "absolute",
+      "double_speed": true,
+      "rom_sha256": "9f41dfa15a5c72f12f377981a1ddcc808e7105dee36de3d8a0228ddcd07a201f",
+      "before": {
+        "lcd_accept": 24,
+        "request_interval": [
+          924,
+          928
+        ],
+        "dispatch_begin": 928,
+        "dispatch_end": 948,
+        "dispatch_bc": 0,
+        "return_pc": 4327,
+        "vector_opcode": 952,
+        "opcode_callback_phase": "after_opcode_fetch_cycle",
+        "witness": [
+          0,
+          0,
+          231,
+          16,
+          4,
+          1,
+          2,
+          0,
+          128,
+          90
+        ],
+        "steps": 255,
+        "repeatable": true,
+        "observer_equivalent": true
+      },
+      "after": {
+        "lcd_accept": 20,
+        "request_interval": [
+          920,
+          924
+        ],
+        "dispatch_begin": 924,
+        "dispatch_end": 944,
+        "dispatch_bc": 0,
+        "return_pc": 4326,
+        "vector_opcode": 948,
+        "opcode_callback_phase": "after_opcode_fetch_cycle",
+        "witness": [
+          0,
+          0,
+          230,
+          16,
+          4,
+          1,
+          2,
+          0,
+          128,
+          90
+        ],
+        "steps": 254,
+        "repeatable": true,
+        "observer_equivalent": true
+      },
+      "reference": {
+        "lcd_accept": 20,
+        "request_interval": [
+          920,
+          924
+        ],
+        "dispatch_begin": 924,
+        "dispatch_end": 944,
+        "dispatch_bc": 0,
+        "return_pc": 4326,
+        "vector_opcode": 944,
+        "opcode_callback_phase": "before_opcode_fetch_pending_cycle",
+        "witness": [
+          0,
+          0,
+          230,
+          16,
+          4,
+          1,
+          2,
+          0,
+          128,
+          90
+        ],
+        "steps": 254,
+        "repeatable": true,
+        "observer_equivalent": true
+      }
+    },
+    {
+      "form": "c",
+      "double_speed": true,
+      "rom_sha256": "a7ea5c27cdb087967752b4974b1aa3c39a073c5397c107aaa1be656ab08bb98c",
+      "before": {
+        "lcd_accept": 24,
+        "request_interval": [
+          924,
+          928
+        ],
+        "dispatch_begin": 928,
+        "dispatch_end": 948,
+        "dispatch_bc": 0,
+        "return_pc": 4327,
+        "vector_opcode": 952,
+        "opcode_callback_phase": "after_opcode_fetch_cycle",
+        "witness": [
+          0,
+          0,
+          231,
+          16,
+          4,
+          1,
+          2,
+          0,
+          128,
+          90
+        ],
+        "steps": 254,
+        "repeatable": true,
+        "observer_equivalent": true
+      },
+      "after": {
+        "lcd_accept": 20,
+        "request_interval": [
+          920,
+          924
+        ],
+        "dispatch_begin": 924,
+        "dispatch_end": 944,
+        "dispatch_bc": 0,
+        "return_pc": 4326,
+        "vector_opcode": 948,
+        "opcode_callback_phase": "after_opcode_fetch_cycle",
+        "witness": [
+          0,
+          0,
+          230,
+          16,
+          4,
+          1,
+          2,
+          0,
+          128,
+          90
+        ],
+        "steps": 253,
+        "repeatable": true,
+        "observer_equivalent": true
+      },
+      "reference": {
+        "lcd_accept": 20,
+        "request_interval": [
+          920,
+          924
+        ],
+        "dispatch_begin": 924,
+        "dispatch_end": 944,
+        "dispatch_bc": 0,
+        "return_pc": 4326,
+        "vector_opcode": 944,
+        "opcode_callback_phase": "before_opcode_fetch_pending_cycle",
+        "witness": [
+          0,
+          0,
+          230,
+          16,
+          4,
+          1,
+          2,
+          0,
+          128,
+          90
+        ],
+        "steps": 253,
+        "repeatable": true,
+        "observer_equivalent": true
+      }
+    },
+    {
+      "form": "hl",
+      "double_speed": true,
+      "rom_sha256": "a37146f450617e182741a2eecadf327cd65659124aa21d95fd15a5222d9620e0",
+      "before": {
+        "lcd_accept": 28,
+        "request_interval": [
+          928,
+          932
+        ],
+        "dispatch_begin": 932,
+        "dispatch_end": 952,
+        "dispatch_bc": 0,
+        "return_pc": 4328,
+        "vector_opcode": 956,
+        "opcode_callback_phase": "after_opcode_fetch_cycle",
+        "witness": [
+          0,
+          0,
+          232,
+          16,
+          4,
+          1,
+          2,
+          0,
+          128,
+          90
+        ],
+        "steps": 254,
+        "repeatable": true,
+        "observer_equivalent": true
+      },
+      "after": {
+        "lcd_accept": 24,
+        "request_interval": [
+          924,
+          928
+        ],
+        "dispatch_begin": 928,
+        "dispatch_end": 948,
+        "dispatch_bc": 0,
+        "return_pc": 4327,
+        "vector_opcode": 952,
+        "opcode_callback_phase": "after_opcode_fetch_cycle",
+        "witness": [
+          0,
+          0,
+          231,
+          16,
+          4,
+          1,
+          2,
+          0,
+          128,
+          90
+        ],
+        "steps": 253,
+        "repeatable": true,
+        "observer_equivalent": true
+      },
+      "reference": {
+        "lcd_accept": 24,
+        "request_interval": [
+          924,
+          928
+        ],
+        "dispatch_begin": 928,
+        "dispatch_end": 948,
+        "dispatch_bc": 0,
+        "return_pc": 4327,
+        "vector_opcode": 948,
+        "opcode_callback_phase": "before_opcode_fetch_pending_cycle",
+        "witness": [
+          0,
+          0,
+          231,
+          16,
+          4,
+          1,
+          2,
+          0,
+          128,
+          90
+        ],
+        "steps": 253,
+        "repeatable": true,
+        "observer_equivalent": true
+      }
+    }
+  ],
+  "reads": [
+    {
+      "scenario": "ldh-phase-0",
+      "double_speed": false,
+      "rom_sha256": "1b046ee49cb5066a1eda056efe17436b15c7b7c67e0e29bbee581b3e0a5c9dac",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "ldh-phase-1",
+      "double_speed": false,
+      "rom_sha256": "b9e48a09a281368c8c51fcef4c522b5c4323bf4306b18c3fb271c9db31edbfaf",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "ldh-phase-2",
+      "double_speed": false,
+      "rom_sha256": "5ab996d58396aca2ea09a5af4a6554c814531f4706d3f0967c4a812b2fbc4860",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "ldh-phase-3",
+      "double_speed": false,
+      "rom_sha256": "0a54d435184c55712c2ee820d277a2bd2ba7105c5399f99067d9e358cc7a560b",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "ldh-phase-4",
+      "double_speed": false,
+      "rom_sha256": "6b8655be281bddd44a043b809df4d8fdd692be70154936336d02741ee9a92ca6",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "ldh-phase-5",
+      "double_speed": false,
+      "rom_sha256": "cf33fe8fd6bd687f23a247916b25e12e0bf6a98ad71446877aae5987c5960aec",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "ldh-phase-6",
+      "double_speed": false,
+      "rom_sha256": "a6d54962909b31a067a70dfdf55196b6eec57025b7171db87f9a702a5bb2dbd5",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "ldh-phase-7",
+      "double_speed": false,
+      "rom_sha256": "b906e4dd789a2f0d2486e06fc245ea44ad7150fbca992195130f5625d544ebf0",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "ldh-phase-8",
+      "double_speed": false,
+      "rom_sha256": "5ca283e669ea87865ef179eafab9ffe69be500a57545d693f54466d0256d43d6",
+      "before": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "ldh-phase-9",
+      "double_speed": false,
+      "rom_sha256": "7a77a9f5897f5cf49bec49b74c94d00d29569b6736fe64baf53306510647e5d6",
+      "before": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "ldh-phase-10",
+      "double_speed": false,
+      "rom_sha256": "8010303fe866a6d9b391611a41c3e57c6ca0940176d0870972b897d60b9148b4",
+      "before": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "ldh-phase-11",
+      "double_speed": false,
+      "rom_sha256": "f48c50840df448198b81708d160867da79015e7c644c3e52f905b6554638a6fa",
+      "before": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "ldh-phase-12",
+      "double_speed": false,
+      "rom_sha256": "1c26cd308b362e29c777ce24893b2437546e8dd0b04e7b6211ff0c0e22d787a9",
+      "before": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "absolute-phase-0",
+      "double_speed": false,
+      "rom_sha256": "50cdb787f96ed59ba79578dc778a2c9a6463d17dca210caab2322799a1e8c8c9",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "absolute-phase-1",
+      "double_speed": false,
+      "rom_sha256": "002fb4e21ea90479906ffe18f64fef9bfcda425cee090daa3befc8b7b7988223",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "absolute-phase-2",
+      "double_speed": false,
+      "rom_sha256": "453a56669b7eef490544a861072a411e8d51a3bf5d802f2091a64f681da3b74d",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "absolute-phase-3",
+      "double_speed": false,
+      "rom_sha256": "58d62b23d80298ab1fcbd31c6bcaf03a3d89554dec98def0c1d549d04fb6ee20",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "absolute-phase-4",
+      "double_speed": false,
+      "rom_sha256": "55121ac38a18c4123351dd10100fd759fd269b120d7d48116af94943433a23a4",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "absolute-phase-5",
+      "double_speed": false,
+      "rom_sha256": "f921319a38a1e3c34362b515926dade8d445fb3650f89379bfdee85b693a58d5",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "absolute-phase-6",
+      "double_speed": false,
+      "rom_sha256": "076ba480912fbd42345501912b53f63379f104a4944dca225e5e76f852d7cab3",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "absolute-phase-7",
+      "double_speed": false,
+      "rom_sha256": "8360c04736476e33253e1ce3e4e7d378664660c4d4444a9863a7c6878749f6dd",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "absolute-phase-8",
+      "double_speed": false,
+      "rom_sha256": "dc47e62777b16822276e5b2da67b0a77fe216b4149e2f0ede7f4ab9001335cb8",
+      "before": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "absolute-phase-9",
+      "double_speed": false,
+      "rom_sha256": "45564f5775994153c815ebb4bd0a8490c24139381dd231e29a4f5abaa0018171",
+      "before": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "absolute-phase-10",
+      "double_speed": false,
+      "rom_sha256": "75322b525adc7139d521dcca62b12b26a66cc31e44c516356498de57f47e8246",
+      "before": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "absolute-phase-11",
+      "double_speed": false,
+      "rom_sha256": "b047eb901142d9327ca1ea9bf41628ad2343dee137270499d1aab03df18e5bb8",
+      "before": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "absolute-phase-12",
+      "double_speed": false,
+      "rom_sha256": "392aa7a783fe1d2f1b23d170e72fac2acc0a2003a15c312444698da759b7287d",
+      "before": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "c-phase-0",
+      "double_speed": false,
+      "rom_sha256": "85c24e823a7c2c776a88938ca49707a677a6a1544677eda9b4ad512a72ed9d90",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "c-phase-1",
+      "double_speed": false,
+      "rom_sha256": "74297e2f5ce2045ff51e97f7b88361c6630d082058c51dabb2130075f7332047",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "c-phase-2",
+      "double_speed": false,
+      "rom_sha256": "75eb47d64846c83a0b34bc9904735fdd0e74dbe727c922c0ed426219328112fa",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "c-phase-3",
+      "double_speed": false,
+      "rom_sha256": "82fbc3a81dacb81cf09c2a865916c25cbf0e736c2ebe4f8234d06559abeccbeb",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "c-phase-4",
+      "double_speed": false,
+      "rom_sha256": "0aa272ab555707bfecbd088d2c2f0f14716f3d0906212eb74904dd1a82980b24",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "c-phase-5",
+      "double_speed": false,
+      "rom_sha256": "6e26123a37bb91eb441f003760ec5f1b04543d44a60426ff30b31135182f42d8",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "c-phase-6",
+      "double_speed": false,
+      "rom_sha256": "76c2d569d1eb5f5542c53cb96a11c1ccfb525f37742adfc2a2b3e34a4de36c4c",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "c-phase-7",
+      "double_speed": false,
+      "rom_sha256": "4117115aed7f87aa549e9de42dc99c82a75056922fc161d0e82ac7144ea47763",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "c-phase-8",
+      "double_speed": false,
+      "rom_sha256": "3a41d4025efd3d71a87e1cff4bbd70986f3e68f20aabdedd456fe5154a715211",
+      "before": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "c-phase-9",
+      "double_speed": false,
+      "rom_sha256": "e1479e36be4ffbc70d4734bfa7a5c717f26c1ce5afbeffda6e7fcbfbacfa7bc5",
+      "before": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "c-phase-10",
+      "double_speed": false,
+      "rom_sha256": "7efb88342dadd455e70cf89bce9cc4685dec501bdc39682534b4831dd84b0f68",
+      "before": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "c-phase-11",
+      "double_speed": false,
+      "rom_sha256": "da9bffa6c4322f2304cc162caa76247a18eff0e8855be4976179104a04a3e1f7",
+      "before": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "c-phase-12",
+      "double_speed": false,
+      "rom_sha256": "695e0c3a97ff48c4ff489bee07ead8b413f83ce1e7f102ed69cd4c0a9c797abd",
+      "before": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "after": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ],
+      "reference": [
+        2,
+        2,
+        3,
+        1,
+        2,
+        0
+      ]
+    },
+    {
+      "scenario": "ldh-phase-0",
+      "double_speed": true,
+      "rom_sha256": "17148932fecdb51cd4607cbac50e8e2e8e7bcf95fc3e5c59ab41670c28ef0751",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "ldh-phase-1",
+      "double_speed": true,
+      "rom_sha256": "565d27cef79423097a8c344c69f6f980c70d850257bacad4b55caac5d6ede442",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "ldh-phase-2",
+      "double_speed": true,
+      "rom_sha256": "0ca4b178ac3a3fe5b4bccfac6138408b021681bc92d8d6384d63f11d29209054",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "ldh-phase-3",
+      "double_speed": true,
+      "rom_sha256": "ae068f2fe831e0027705d9b632820251ea07a31c98ae35c9c10d5b8388699dee",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "ldh-phase-4",
+      "double_speed": true,
+      "rom_sha256": "1745c1d49944d4dfa2a6e2492b2cc727a7c85998b3e444f1f1347e8933d81f1f",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "ldh-phase-5",
+      "double_speed": true,
+      "rom_sha256": "5e4a30a5ab0909903554e251dd100158a60a93abd6ca1607fa3cc99998c126ff",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "ldh-phase-6",
+      "double_speed": true,
+      "rom_sha256": "cbe26759b479b28a48dcc4a52308cadbdf57a183debeeb2dd5370eb67d2ac3ad",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "ldh-phase-7",
+      "double_speed": true,
+      "rom_sha256": "4b0774db986fb517b19fcd51cbbaa9f07d935cc04661cc08687436699d258c9a",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "ldh-phase-8",
+      "double_speed": true,
+      "rom_sha256": "97c2e6b6a6edecf5b35980f3d5214ee114f16192100126f01dc8f99a14cacf44",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "ldh-phase-9",
+      "double_speed": true,
+      "rom_sha256": "26438ce296176e120002d5fd60dbb4d927d6eb489edce20f59bad657f9fb6ac6",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "ldh-phase-10",
+      "double_speed": true,
+      "rom_sha256": "f1ef3fbb2a38756e2c7da67a48cb00236e837b19be361965b0314137a1fa1f98",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "ldh-phase-11",
+      "double_speed": true,
+      "rom_sha256": "8c1d816987931e94034bf5fab2be5f19953179c1d1e351a7283015876516c72f",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "ldh-phase-12",
+      "double_speed": true,
+      "rom_sha256": "6bc0d984ee594218c7faa5593ac1e232cec7dd62f6236ca2362eb21d4f4d722f",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "absolute-phase-0",
+      "double_speed": true,
+      "rom_sha256": "49797ab3ce85b4ffcbbc3f4c88ad4f1afbd481e92298949c7e685434b6e95605",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "absolute-phase-1",
+      "double_speed": true,
+      "rom_sha256": "bc53a389ca6ec82028fcd7cbd1352fcb60990b55d97803de08c91da78a9a5b60",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "absolute-phase-2",
+      "double_speed": true,
+      "rom_sha256": "c6451bac3cb31de1f3ebfc0357458fa3b549047d9a1d12f04d0cbd5f8219990a",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "absolute-phase-3",
+      "double_speed": true,
+      "rom_sha256": "b740bc2bfed62ce0ebe92d20cc2b4db1d8513e62fd7a8a0817375f2da54632a5",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "absolute-phase-4",
+      "double_speed": true,
+      "rom_sha256": "7db9ce6265a4670b6cad54c15e8252578e9e334ed1543cbaacc54b9c18c7df00",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "absolute-phase-5",
+      "double_speed": true,
+      "rom_sha256": "e135fa0957bbf064b408fadc592379424cdbe22c6083b145c15d58cdc53c61ad",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "absolute-phase-6",
+      "double_speed": true,
+      "rom_sha256": "88765a23275facb11a2414677aff8b03b89614dda3fe75efa44710eb69019400",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "absolute-phase-7",
+      "double_speed": true,
+      "rom_sha256": "3a1710cbf4dfd7dce8916a9ed62c10acd5000c93896a5b473d98890b5f35ae3d",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "absolute-phase-8",
+      "double_speed": true,
+      "rom_sha256": "54ae9c3a5f3be0fdc14b04596416007e9a61f422f861364a281ccd21a04f2828",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "absolute-phase-9",
+      "double_speed": true,
+      "rom_sha256": "e7bb4906869e5bc6448ca674c286f6e306448106d540850bc23bc0fa1d9719e6",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "absolute-phase-10",
+      "double_speed": true,
+      "rom_sha256": "7cf4d4fa312d15c7e03f97bfc3686361f9b3e7cb4736af16526f8931fb0f63e8",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "absolute-phase-11",
+      "double_speed": true,
+      "rom_sha256": "d3554483ebe0949a451876453bfab1777f1abde05c0372c91abf00e0d87e3d20",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "absolute-phase-12",
+      "double_speed": true,
+      "rom_sha256": "e9d3dfbc17406630f6c451eae551550f9c3a57ace11ed95b11236912a3689e33",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "c-phase-0",
+      "double_speed": true,
+      "rom_sha256": "5a86472e805d6fa714a3f20d052885491d7e75b629a651062f6838be447753dc",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "c-phase-1",
+      "double_speed": true,
+      "rom_sha256": "d500477e85361452f72bd73b240ae7b9a9c1b5b1faf91e81c788bacd2438f80a",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "c-phase-2",
+      "double_speed": true,
+      "rom_sha256": "95f3dc13aca02b6a074af740e8e6388d54edcd18dc1fdf2510560c078fff3601",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "c-phase-3",
+      "double_speed": true,
+      "rom_sha256": "8afaf0d83f11e7c002342f4f218f064b5d449b680af3dc24954161060e23801b",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "c-phase-4",
+      "double_speed": true,
+      "rom_sha256": "b0731ee48acef152dd51c5dcbe9ee83ff70763a2b969418949ccf8cfa056bf10",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "c-phase-5",
+      "double_speed": true,
+      "rom_sha256": "d732aa7477766a7da68ec604b22052eba9febdc796064ae2e1dff83307665352",
+      "before": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        0,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "c-phase-6",
+      "double_speed": true,
+      "rom_sha256": "5bf5d4ffb65fb11ee42a9b54010d9c4efa9ffc928eda87d4c511e364d4ae55f8",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "c-phase-7",
+      "double_speed": true,
+      "rom_sha256": "1ee3aa63550a34d969a07d4fda0117e319a6ad33c2fa115cd168179c2a23cef9",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "c-phase-8",
+      "double_speed": true,
+      "rom_sha256": "095b919fd85301df41125242bf680f177a01e65043972ce55c9482d99662017a",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "c-phase-9",
+      "double_speed": true,
+      "rom_sha256": "503ca018801416b7d673e10fc6dde0809e97b624e388d076420b10f968bd03a9",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "c-phase-10",
+      "double_speed": true,
+      "rom_sha256": "eb86529c62154576f8f22c05ff01615f868be64d78b962a8ef574b49399a76c8",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "c-phase-11",
+      "double_speed": true,
+      "rom_sha256": "c1729a655f580103bb78a35adc90ac9eba31287af4d881142f7c54b7bfed0774",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "scenario": "c-phase-12",
+      "double_speed": true,
+      "rom_sha256": "019f2d4fd276b6a335ee09f25c5c006feac8ce414fff4098e86e351ccfed938b",
+      "before": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "after": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ],
+      "reference": [
+        2,
+        2,
+        2,
+        1,
+        4,
+        128
+      ]
+    }
+  ],
+  "candidate_accepted": false,
+  "rejection_reason": "The general IO correction changes a DMA snapshot contract and regresses the uniform-startup private counterexample even with synchronized reference pixels. A LCD/IF-only alternative restores that title but regresses seven authored STAT/LY controls. IO timing was preserved; native interrupt-fetch recognition supplies the retained correction.",
+  "candidate_patch": "tests/fixtures/research/cgb-native-io-phase-rejected.patch",
+  "candidate_patch_sha256": "52040a57f18d9b88cb5e6c5b27eaa890b46e06cf7ab5aa4524da55d26d90f7f3",
+  "cpu_candidate_sha256": "d114a0e00738e2dd0ac76cd9df523b197805e64a56c275d6d798b07ae8b20059",
+  "ablation_variants": {
+    "cgb-lcd-stat-phase-rejected": {
+      "patch": "tests/fixtures/research/cgb-lcd-stat-phase-rejected.patch",
+      "patch_sha256": "a8c4a36eee2e062f2be7cd87aefce271f133ee85ecbbabf0fec015dd3de0c253",
+      "accepted": false,
+      "request_phase_matches": 86,
+      "request_phase_cases": 86,
+      "private_startup_control_matches": 0,
+      "private_startup_control_cases": 3
+    },
+    "cgb-lcd-if-phase-rejected": {
+      "patch": "tests/fixtures/research/cgb-lcd-if-phase-rejected.patch",
+      "patch_sha256": "f76191b956a8931fec845a7bc0ec5fd897009b43c935970e3c8cd3fff6c04bb4",
+      "accepted": false,
+      "request_phase_matches": 79,
+      "request_phase_cases": 86,
+      "private_startup_control_matches": 3,
+      "private_startup_control_cases": 3
+    }
+  },
+  "historical_source_sha256": {
+    "scripts/cgb_lcd_bus_phase_probe.py": "f532268d427fb74e5e7f3015acc6fc836681b38fc9d167266ca60ae6f97fd190",
+    "scripts/cgb_stat_clock_probe.py": "837b012cf956e3e42935c9ab145b697e4ddaaa7882204366b4ec170ebc224b7f",
+    "scripts/cgb_stat_request_phase_probe.py": "7ea56b4361f424ce018f239a39d62c2dc188b0d1e75b21817fd29c5f3bb948ed",
+    "scripts/cgb_stat_vector_probe.py": "4ac819092486b8da94291e83ffb1243689ab052cc24bfb11f8b9a8bf5e4aee99",
+    "scripts/cgb_lcd_startup_probe.py": "ad2ccc2372b3bf018ec67b08baf746d0e76177366f284ce27071d99acb540690",
+    "scripts/cgb_pcm_stat_probe.py": "cd48efb1e0b4f742146af8297790da16fa649bde5d469e3e45abdb8be1e8911a",
+    "scripts/cgb_frame_anchor_probe.py": "64ebef18d72fe32b55c9dcebfb6a9279459a5584123d7b3872cd2e62c41fd39c",
+    "scripts/gbb_stat_clock_trace.cpp": "92e977fee7505c574541fc3eaa7c2e9257182623fb5c2627ac21f03773df841c",
+    "scripts/sameboy_stat_clock_trace.c": "d87046d5a890a30601059d9625e96d9196302958036360023fd952c09f4ed45f",
+    "scripts/stat_clock_trace.h": "fb4a4f6665c15a5e3d2f18f62929c48671be3d867cbe8532ab6b4324d4b56fdb"
+  },
+  "reproduction_base_cpu_sha256": "fdf86b750e99c1e6240bd5bf1237f98819c7329b7e7c2a035bc3b3b05fa3e56e",
+  "reproduction_note": "The rejected patches are rebased onto the validated interrupt-fetch implementation: they disable its late-fetch decision while retaining the host-only interrupt observer API, then reproduce the historical IO timing alternatives. Apply only in an isolated checkout at this recorded base hash.",
+  "retained_correction": {
+    "kind": "native_interrupt_fetch_sample",
+    "cpu_sha256": "fdf86b750e99c1e6240bd5bf1237f98819c7329b7e7c2a035bc3b3b05fa3e56e",
+    "binaries": {
+      "gbb_clock": "fcdc5822555239c81118e93313bbd2f5882529aa54e00e1c3b7a25217d89549e",
+      "sameboy_clock": "b16e9281cc90b15ab26daf92bd44d5d5f939f918289c407ca927b8ee37feb2b2",
+      "runner": "a1fed2a651dfcd96ccc1b4a3146f39ba1514d5e7d94405ef9d14b0b6840a25fd",
+      "capture": "ccc958008c9d29fc5bee4b39d1c02bd0a48b5d7cdfd58e1a605bc9d5405aae10"
+    },
+    "architectural_write_matches": 8,
+    "write_cases": 8,
+    "lcd_phase_matches": 0,
+    "read_matches": 78,
+    "read_cases": 78,
+    "clock_matches": 66,
+    "clock_cases": 66,
+    "lcd_startup_matches": 48,
+    "lcd_startup_cases": 48,
+    "request_phase_matches": 86,
+    "request_phase_cases": 86,
+    "status": "validated_public_contracts_and_paired_controls",
+    "public_contracts": 271,
+    "public_failures": 0,
+    "hardware_model_cases": 4928,
+    "hardware_model_regressions": 0,
+    "private_capture_successes": 300,
+    "private_baseline_differences": 45,
+    "synchronized_reference_matches": 30,
+    "private_unresolved_snapshots": 15,
+    "private_unresolved_roms": 10,
+    "release_qualified": false
+  },
+  "retained_write_observations": [
+    {
+      "form": "ldh",
+      "double_speed": false,
+      "rom_sha256": "4bc6d08e7f3017d5516d542e8cf2368901cddb3654f481d4d3d693f107416ec3",
+      "captures": {
+        "gbb": {
+          "lcd_accept": 40,
+          "request_interval": [
+            936,
+            944
+          ],
+          "dispatch_begin": 936,
+          "dispatch_end": 976,
+          "dispatch_bc": 0,
+          "return_pc": 4212,
+          "vector_opcode": 984,
+          "interrupt_sample": 944,
+          "interrupt_sample_after_fetch": true,
+          "opcode_callback_phase": "after_opcode_fetch_cycle",
+          "witness": [
+            0,
+            0,
+            116,
+            16,
+            2,
+            1,
+            3,
+            0,
+            0,
+            90
+          ],
+          "steps": 141,
+          "repeatable": true,
+          "observer_equivalent": true
+        },
+        "sameboy": {
+          "lcd_accept": 32,
+          "request_interval": [
+            928,
+            936
+          ],
+          "dispatch_begin": 936,
+          "dispatch_end": 976,
+          "dispatch_bc": 0,
+          "return_pc": 4212,
+          "vector_opcode": 976,
+          "interrupt_sample": 936,
+          "interrupt_sample_after_fetch": false,
+          "opcode_callback_phase": "before_opcode_fetch_pending_cycle",
+          "witness": [
+            0,
+            0,
+            116,
+            16,
+            2,
+            1,
+            3,
+            0,
+            0,
+            90
+          ],
+          "steps": 141,
+          "repeatable": true,
+          "observer_equivalent": true
+        }
+      },
+      "lcd_phase_match": false,
+      "match": true
+    },
+    {
+      "form": "absolute",
+      "double_speed": false,
+      "rom_sha256": "12e41c5d8dd8ec7a616571f0b91e0ccd8d0b5a016430695c4184510cffde7070",
+      "captures": {
+        "gbb": {
+          "lcd_accept": 48,
+          "request_interval": [
+            944,
+            952
+          ],
+          "dispatch_begin": 944,
+          "dispatch_end": 984,
+          "dispatch_bc": 0,
+          "return_pc": 4213,
+          "vector_opcode": 992,
+          "interrupt_sample": 952,
+          "interrupt_sample_after_fetch": true,
+          "opcode_callback_phase": "after_opcode_fetch_cycle",
+          "witness": [
+            0,
+            0,
+            117,
+            16,
+            2,
+            1,
+            3,
+            0,
+            0,
+            90
+          ],
+          "steps": 141,
+          "repeatable": true,
+          "observer_equivalent": true
+        },
+        "sameboy": {
+          "lcd_accept": 40,
+          "request_interval": [
+            936,
+            944
+          ],
+          "dispatch_begin": 944,
+          "dispatch_end": 984,
+          "dispatch_bc": 0,
+          "return_pc": 4213,
+          "vector_opcode": 984,
+          "interrupt_sample": 944,
+          "interrupt_sample_after_fetch": false,
+          "opcode_callback_phase": "before_opcode_fetch_pending_cycle",
+          "witness": [
+            0,
+            0,
+            117,
+            16,
+            2,
+            1,
+            3,
+            0,
+            0,
+            90
+          ],
+          "steps": 141,
+          "repeatable": true,
+          "observer_equivalent": true
+        }
+      },
+      "lcd_phase_match": false,
+      "match": true
+    },
+    {
+      "form": "c",
+      "double_speed": false,
+      "rom_sha256": "259a2f67a3ae5d75075c47e7e27312a2270d4560f5bd8cce4a9c178c5a40511a",
+      "captures": {
+        "gbb": {
+          "lcd_accept": 48,
+          "request_interval": [
+            944,
+            952
+          ],
+          "dispatch_begin": 944,
+          "dispatch_end": 984,
+          "dispatch_bc": 0,
+          "return_pc": 4213,
+          "vector_opcode": 992,
+          "interrupt_sample": 952,
+          "interrupt_sample_after_fetch": true,
+          "opcode_callback_phase": "after_opcode_fetch_cycle",
+          "witness": [
+            0,
+            0,
+            117,
+            16,
+            2,
+            1,
+            3,
+            0,
+            0,
+            90
+          ],
+          "steps": 140,
+          "repeatable": true,
+          "observer_equivalent": true
+        },
+        "sameboy": {
+          "lcd_accept": 40,
+          "request_interval": [
+            936,
+            944
+          ],
+          "dispatch_begin": 944,
+          "dispatch_end": 984,
+          "dispatch_bc": 0,
+          "return_pc": 4213,
+          "vector_opcode": 984,
+          "interrupt_sample": 944,
+          "interrupt_sample_after_fetch": false,
+          "opcode_callback_phase": "before_opcode_fetch_pending_cycle",
+          "witness": [
+            0,
+            0,
+            117,
+            16,
+            2,
+            1,
+            3,
+            0,
+            0,
+            90
+          ],
+          "steps": 140,
+          "repeatable": true,
+          "observer_equivalent": true
+        }
+      },
+      "lcd_phase_match": false,
+      "match": true
+    },
+    {
+      "form": "hl",
+      "double_speed": false,
+      "rom_sha256": "c19efd4b78869f6616e7f9a8c0727cd24c7042d8f04ef063e7eca638ac30fb3e",
+      "captures": {
+        "gbb": {
+          "lcd_accept": 56,
+          "request_interval": [
+            952,
+            960
+          ],
+          "dispatch_begin": 952,
+          "dispatch_end": 992,
+          "dispatch_bc": 0,
+          "return_pc": 4214,
+          "vector_opcode": 1000,
+          "interrupt_sample": 960,
+          "interrupt_sample_after_fetch": true,
+          "opcode_callback_phase": "after_opcode_fetch_cycle",
+          "witness": [
+            0,
+            0,
+            118,
+            16,
+            2,
+            1,
+            3,
+            0,
+            0,
+            90
+          ],
+          "steps": 140,
+          "repeatable": true,
+          "observer_equivalent": true
+        },
+        "sameboy": {
+          "lcd_accept": 48,
+          "request_interval": [
+            944,
+            952
+          ],
+          "dispatch_begin": 952,
+          "dispatch_end": 992,
+          "dispatch_bc": 0,
+          "return_pc": 4214,
+          "vector_opcode": 992,
+          "interrupt_sample": 952,
+          "interrupt_sample_after_fetch": false,
+          "opcode_callback_phase": "before_opcode_fetch_pending_cycle",
+          "witness": [
+            0,
+            0,
+            118,
+            16,
+            2,
+            1,
+            3,
+            0,
+            0,
+            90
+          ],
+          "steps": 140,
+          "repeatable": true,
+          "observer_equivalent": true
+        }
+      },
+      "lcd_phase_match": false,
+      "match": true
+    },
+    {
+      "form": "ldh",
+      "double_speed": true,
+      "rom_sha256": "7cc0a382acac3a84f7e30534628c8c252c0f1540b476071ccd2a9b53aabb7683",
+      "captures": {
+        "gbb": {
+          "lcd_accept": 20,
+          "request_interval": [
+            920,
+            924
+          ],
+          "dispatch_begin": 920,
+          "dispatch_end": 940,
+          "dispatch_bc": 0,
+          "return_pc": 4325,
+          "vector_opcode": 944,
+          "interrupt_sample": 924,
+          "interrupt_sample_after_fetch": true,
+          "opcode_callback_phase": "after_opcode_fetch_cycle",
+          "witness": [
+            0,
+            0,
+            229,
+            16,
+            4,
+            1,
+            2,
+            0,
+            128,
+            90
+          ],
+          "steps": 254,
+          "repeatable": true,
+          "observer_equivalent": true
+        },
+        "sameboy": {
+          "lcd_accept": 16,
+          "request_interval": [
+            916,
+            920
+          ],
+          "dispatch_begin": 920,
+          "dispatch_end": 940,
+          "dispatch_bc": 0,
+          "return_pc": 4325,
+          "vector_opcode": 940,
+          "interrupt_sample": 920,
+          "interrupt_sample_after_fetch": false,
+          "opcode_callback_phase": "before_opcode_fetch_pending_cycle",
+          "witness": [
+            0,
+            0,
+            229,
+            16,
+            4,
+            1,
+            2,
+            0,
+            128,
+            90
+          ],
+          "steps": 254,
+          "repeatable": true,
+          "observer_equivalent": true
+        }
+      },
+      "lcd_phase_match": false,
+      "match": true
+    },
+    {
+      "form": "absolute",
+      "double_speed": true,
+      "rom_sha256": "9f41dfa15a5c72f12f377981a1ddcc808e7105dee36de3d8a0228ddcd07a201f",
+      "captures": {
+        "gbb": {
+          "lcd_accept": 24,
+          "request_interval": [
+            924,
+            928
+          ],
+          "dispatch_begin": 924,
+          "dispatch_end": 944,
+          "dispatch_bc": 0,
+          "return_pc": 4326,
+          "vector_opcode": 948,
+          "interrupt_sample": 928,
+          "interrupt_sample_after_fetch": true,
+          "opcode_callback_phase": "after_opcode_fetch_cycle",
+          "witness": [
+            0,
+            0,
+            230,
+            16,
+            4,
+            1,
+            2,
+            0,
+            128,
+            90
+          ],
+          "steps": 254,
+          "repeatable": true,
+          "observer_equivalent": true
+        },
+        "sameboy": {
+          "lcd_accept": 20,
+          "request_interval": [
+            920,
+            924
+          ],
+          "dispatch_begin": 924,
+          "dispatch_end": 944,
+          "dispatch_bc": 0,
+          "return_pc": 4326,
+          "vector_opcode": 944,
+          "interrupt_sample": 924,
+          "interrupt_sample_after_fetch": false,
+          "opcode_callback_phase": "before_opcode_fetch_pending_cycle",
+          "witness": [
+            0,
+            0,
+            230,
+            16,
+            4,
+            1,
+            2,
+            0,
+            128,
+            90
+          ],
+          "steps": 254,
+          "repeatable": true,
+          "observer_equivalent": true
+        }
+      },
+      "lcd_phase_match": false,
+      "match": true
+    },
+    {
+      "form": "c",
+      "double_speed": true,
+      "rom_sha256": "a7ea5c27cdb087967752b4974b1aa3c39a073c5397c107aaa1be656ab08bb98c",
+      "captures": {
+        "gbb": {
+          "lcd_accept": 24,
+          "request_interval": [
+            924,
+            928
+          ],
+          "dispatch_begin": 924,
+          "dispatch_end": 944,
+          "dispatch_bc": 0,
+          "return_pc": 4326,
+          "vector_opcode": 948,
+          "interrupt_sample": 928,
+          "interrupt_sample_after_fetch": true,
+          "opcode_callback_phase": "after_opcode_fetch_cycle",
+          "witness": [
+            0,
+            0,
+            230,
+            16,
+            4,
+            1,
+            2,
+            0,
+            128,
+            90
+          ],
+          "steps": 253,
+          "repeatable": true,
+          "observer_equivalent": true
+        },
+        "sameboy": {
+          "lcd_accept": 20,
+          "request_interval": [
+            920,
+            924
+          ],
+          "dispatch_begin": 924,
+          "dispatch_end": 944,
+          "dispatch_bc": 0,
+          "return_pc": 4326,
+          "vector_opcode": 944,
+          "interrupt_sample": 924,
+          "interrupt_sample_after_fetch": false,
+          "opcode_callback_phase": "before_opcode_fetch_pending_cycle",
+          "witness": [
+            0,
+            0,
+            230,
+            16,
+            4,
+            1,
+            2,
+            0,
+            128,
+            90
+          ],
+          "steps": 253,
+          "repeatable": true,
+          "observer_equivalent": true
+        }
+      },
+      "lcd_phase_match": false,
+      "match": true
+    },
+    {
+      "form": "hl",
+      "double_speed": true,
+      "rom_sha256": "a37146f450617e182741a2eecadf327cd65659124aa21d95fd15a5222d9620e0",
+      "captures": {
+        "gbb": {
+          "lcd_accept": 28,
+          "request_interval": [
+            928,
+            932
+          ],
+          "dispatch_begin": 928,
+          "dispatch_end": 948,
+          "dispatch_bc": 0,
+          "return_pc": 4327,
+          "vector_opcode": 952,
+          "interrupt_sample": 932,
+          "interrupt_sample_after_fetch": true,
+          "opcode_callback_phase": "after_opcode_fetch_cycle",
+          "witness": [
+            0,
+            0,
+            231,
+            16,
+            4,
+            1,
+            2,
+            0,
+            128,
+            90
+          ],
+          "steps": 253,
+          "repeatable": true,
+          "observer_equivalent": true
+        },
+        "sameboy": {
+          "lcd_accept": 24,
+          "request_interval": [
+            924,
+            928
+          ],
+          "dispatch_begin": 928,
+          "dispatch_end": 948,
+          "dispatch_bc": 0,
+          "return_pc": 4327,
+          "vector_opcode": 948,
+          "interrupt_sample": 928,
+          "interrupt_sample_after_fetch": false,
+          "opcode_callback_phase": "before_opcode_fetch_pending_cycle",
+          "witness": [
+            0,
+            0,
+            231,
+            16,
+            4,
+            1,
+            2,
+            0,
+            128,
+            90
+          ],
+          "steps": 253,
+          "repeatable": true,
+          "observer_equivalent": true
+        }
+      },
+      "lcd_phase_match": false,
+      "match": true
+    }
+  ],
+  "historical_unsynchronized_private_counts": {
+    "candidate_private_reference_matches": 27,
+    "candidate_private_unresolved_snapshots": 18,
+    "candidate_private_unresolved_roms": 11,
+    "superseded_by_ppu_synchronized_capture": true
+  }
+}

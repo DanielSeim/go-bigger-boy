@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+- Recognize native CGB interrupts that arrive during opcode fetch, discarding
+  that opcode and retaining the total 20-clock entry. Preserve executed-only
+  CPU histories, compatibility timing, and serialized state behavior.
+
+- Synchronize deferred SameBoy PPU output before elapsed-clock reference
+  captures. Add an owned-ROM calibration that catches stale reference pixels
+  without advancing CPU time or fitting screenshot offsets.
+
+- Add LCD-write addressing-form and equal-cost IF-read comparisons. Preserve
+  rejected timing experiments and their regression evidence without changing
+  production CPU timing or approving private screenshot baselines.
+
+- Add bounded common-clock LCD/STAT/interrupt traces with NOP calibration and
+  observer-disabled state checks. Expose the four-CPU-clock LCD-write phase
+  difference against the pinned reference without changing emulator timing.
+
 - Add equal-cost foreground IF-read controls around first-STAT instruction
   boundaries, retaining IE while disabling interrupt service. Record repeated
   independent comparisons without changing emulator timing or release baselines.

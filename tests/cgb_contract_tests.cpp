@@ -133,6 +133,83 @@ void test_hram_dma_return() {
     }
 }
 
+void test_native_interrupt_fetch_sample() {
+    for (const auto model : {gameboy::HardwareModel::cgb0, gameboy::HardwareModel::cgb_c,
+                             gameboy::HardwareModel::cgb_e, gameboy::HardwareModel::cgb}) {
+        for (const bool native : {false,true}) for (const bool fast : {false,true}) {
+            if (fast && !native) continue;
+            for (const bool timer : {false,true}) {
+                std::vector<std::uint8_t> program;
+                if (fast) program={0x3E,1,0xE0,0x4D,0x10,0,0};
+                program.insert(program.end(),{0xFB,0,0x03,0x76}); // EI; NOP; INC BC; HALT
+                auto image=native?cgb_test_rom(program):test_rom(program);
+                gameboy::Emulator emulator{gameboy::Cartridge{image},model};
+                auto& bus=emulator.bus();
+                const auto mask=static_cast<std::uint8_t>(timer?4:2);
+                bus.write8(0xFF40,0); bus.write8(0xFF41,0);
+                bus.write8(0xFF07,0); bus.write8(0xFF0F,0); bus.write8(0xFFFF,mask);
+                if (fast) {
+                    for (unsigned n=0;n<3;++n) (void)emulator.step();
+                    while (emulator.cpu().debug_speed_switch_cycles_remaining()) (void)emulator.step();
+                    (void)emulator.step();
+                }
+                (void)emulator.step(); (void)emulator.step();
+                check(emulator.cpu().interrupts_enabled(),"IRQ fetch witness arms IME before the request");
+                const auto pc=emulator.cpu().registers().pc;
+                if (timer) {
+                    bus.write8(0xFF04,0); bus.write8(0xFF05,0xFF); bus.write8(0xFF06,0);
+                    bus.write8(0xFF07,5); bus.tick(18); // overflow at 16T, reload/IRQ at 20T
+                } else {
+                    bus.write8(0xFF41,0x20); bus.write8(0xFF40,0x87);
+                    bus.tick((fast?904:452)-2); // first mode-2 edge two CPU clocks into the fetch
+                }
+                check((bus.read8(0xFF0F)&mask)==0,"IRQ is not pending at the instruction boundary");
+                struct Capture {
+                    const gameboy::Emulator* emulator{};
+                    unsigned instructions{}, interrupts{};
+                    std::uint16_t pc{}; std::uint8_t pending{}; bool after_fetch{};
+                    std::uint64_t clock{};
+                } observed{&emulator};
+                emulator.debug_set_cpu_instruction_observer(
+                    [](void* context,std::uint16_t,std::uint8_t) noexcept {
+                        ++static_cast<Capture*>(context)->instructions;
+                    },&observed);
+                emulator.debug_set_cpu_interrupt_observer(
+                    [](void* context,std::uint16_t address,std::uint8_t pending,bool after_fetch) noexcept {
+                        auto& out=*static_cast<Capture*>(context);
+                        ++out.interrupts; out.pc=address; out.pending=pending; out.after_fetch=after_fetch;
+                        out.clock=out.emulator->bus().debug_normalized_clocks();
+                    },&observed);
+                const auto clock=bus.debug_normalized_clocks();
+                const auto before=emulator.save_state();
+                check(emulator.step()==(native?20U:8U),"discarded native fetch is part of the twenty entry clocks");
+                if (native) {
+                    check(emulator.cpu().registers().pc==(timer?0x50:0x48) &&
+                              emulator.cpu().registers().b==0 && emulator.cpu().registers().c==0,
+                          "native IRQ discards INC BC and enters the selected vector");
+                    check(bus.read16(0xFFFC)==pc && emulator.cpu().registers().sp==0xFFFC,
+                          "discarded fetch stacks its original PC exactly once");
+                    check(observed.instructions==0 && observed.interrupts==1 && observed.pc==pc &&
+                              observed.pending==mask && observed.after_fetch &&
+                              observed.clock-clock==(fast?4U:8U),
+                          "observers distinguish discarded fetches from executed instructions");
+                } else {
+                    check(emulator.cpu().registers().pc==pc+1 && emulator.cpu().registers().c==1 &&
+                              observed.instructions==1 && observed.interrupts==0,
+                          "monochrome compatibility keeps its existing recognition boundary");
+                }
+                const auto after=emulator.save_state();
+                emulator.debug_set_cpu_instruction_observer(nullptr,nullptr);
+                emulator.debug_set_cpu_interrupt_observer(nullptr,nullptr);
+                emulator.load_state(before);
+                (void)emulator.step();
+                check(emulator.save_state()==after,
+                      "IRQ recognition and observer-disabled replay preserve serialized state");
+            }
+        }
+    }
+}
+
 void test_split_double_speed_clocks() {
     const auto image = cgb_test_rom({0x3e, 1, 0xe0, 0x4d, 0x10, 0, 0, 0xf0, 0x0f});
     const auto prepare = [](gameboy::Emulator& emulator) {
@@ -424,6 +501,7 @@ int main() {
         test_ff74_native_and_compatibility();
         test_hram_dma_return();
         test_cgb_memory_and_rendering();
+        test_native_interrupt_fetch_sample();
         test_split_double_speed_clocks();
     } catch (const std::exception& error) {
         std::cerr << "Unexpected exception: " << error.what() << '\n';

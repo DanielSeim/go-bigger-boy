@@ -656,6 +656,9 @@ if(GAMEBOY_BUILD_SDL)
 endif()
 
 if(GAMEBOY_BUILD_TESTS)
+    add_executable(gameboy_stat_clock_trace scripts/gbb_stat_clock_trace.cpp)
+    target_link_libraries(gameboy_stat_clock_trace PRIVATE gameboy_core)
+    set_target_properties(gameboy_stat_clock_trace PROPERTIES OUTPUT_NAME gbb_stat_clock_trace)
     enable_testing()
     add_executable(gameboy_dmg_boot_probe tests/dmg_boot_probe.cpp)
     target_link_libraries(gameboy_dmg_boot_probe PRIVATE gameboy_core)
@@ -789,6 +792,13 @@ if(GAMEBOY_BUILD_TESTS)
         add_test(NAME gameboy_cgb_lcd_startup_probe_contract
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_lcd_startup_probe_tests.py)
+        add_test(NAME gameboy_cgb_lcd_bus_phase_probe_contract
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_lcd_bus_phase_probe_tests.py)
+        add_test(NAME gameboy_cgb_stat_clock_probe_contract
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_stat_clock_probe_tests.py
+                         $<TARGET_FILE:gameboy_stat_clock_trace>)
         add_test(NAME gameboy_cgb_stat_boundary_read_probe_contract
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/cgb_stat_boundary_read_probe_tests.py)
